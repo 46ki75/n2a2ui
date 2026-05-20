@@ -20,8 +20,8 @@ use futures::future::BoxFuture;
 use notionrs::PaginateExt;
 use notionrs::types::prelude::{
     Block, BlockResponse, BookmarkBlock, BulletedListItemBlock, CalloutBlock, EmojiAndIcon,
-    EquationBlock, File as NotionFile, Language, NumberedListItemBlock, ParagraphBlock,
-    QuoteBlock, RichText as NotionRichText, TableRowBlock, ToDoBlock, ToggleBlock,
+    EquationBlock, File as NotionFile, Language, NumberedListItemBlock, ParagraphBlock, QuoteBlock,
+    RichText as NotionRichText, TableRowBlock, ToDoBlock, ToggleBlock,
 };
 
 use crate::error::Error;
@@ -53,7 +53,10 @@ impl<'a> Converter<'a> {
         Ok((ids, bag))
     }
 
-    async fn fetch_children(&self, parent_id: &str) -> Result<Vec<BlockResponse>, Error> {
+    pub(crate) async fn fetch_children(
+        &self,
+        parent_id: &str,
+    ) -> Result<Vec<BlockResponse>, Error> {
         let blocks: Vec<BlockResponse> = self
             .notionrs
             .get_block_children()
@@ -62,6 +65,34 @@ impl<'a> Converter<'a> {
             .try_collect()
             .await?;
         Ok(blocks)
+    }
+
+    /// Convert a single non-list sibling into its own chunk: a fresh
+    /// component bag plus the id the parent should reference.
+    ///
+    /// Returns `None` when the block is unsupported and
+    /// `enable_unsupported_block` is off — the streaming orchestrator
+    /// skips those without emitting an `updateComponents`.
+    pub(crate) async fn convert_single_block_to_chunk(
+        &self,
+        notion: &BlockResponse,
+    ) -> Result<Option<(ComponentId, Vec<Component>)>, Error> {
+        let mut bag = Vec::new();
+        let id = self.convert_block(notion, &mut bag).await?;
+        Ok(id.map(|id| (id, bag)))
+    }
+
+    /// Convert a consecutive run of list-item siblings (same style) into
+    /// one `List` chunk, returning the list-group id and every component
+    /// synthesized for it.
+    pub(crate) async fn convert_list_group_to_chunk(
+        &self,
+        items: &[BlockResponse],
+        style: ListStyle,
+    ) -> Result<(ComponentId, Vec<Component>), Error> {
+        let mut bag = Vec::new();
+        let id = self.emit_list(items, style, &mut bag).await?;
+        Ok((id, bag))
     }
 
     /// Convert a sequence of sibling blocks, grouping consecutive list
@@ -141,12 +172,7 @@ impl<'a> Converter<'a> {
                     let caption = if code.caption.is_empty() {
                         None
                     } else {
-                        Some(
-                            code.caption
-                                .iter()
-                                .map(rich_text_plain)
-                                .collect::<String>(),
-                        )
+                        Some(code.caption.iter().map(rich_text_plain).collect::<String>())
                     };
                     if matches!(code.language, Language::Mermaid) {
                         Mermaid {
@@ -215,7 +241,10 @@ impl<'a> Converter<'a> {
                     }
                     .into()
                 }
-                Block::Table { table } => self.table(&id, table.has_column_header, table.has_row_header, bag).await?,
+                Block::Table { table } => {
+                    self.table(&id, table.has_column_header, table.has_row_header, bag)
+                        .await?
+                }
                 Block::Tab { .. } => self.tab(&id, notion.has_children, bag).await?,
                 Block::SyncedBlock { .. } => {
                     // Render the synced block transparently as a Column of its children.
@@ -332,8 +361,7 @@ impl<'a> Converter<'a> {
                 children.push(icon_id);
             }
         }
-        let (rt_ids, mut rt) =
-            rich_text::convert_rich_texts(id, "rich_text", &block.rich_text);
+        let (rt_ids, mut rt) = rich_text::convert_rich_texts(id, "rich_text", &block.rich_text);
         bag.append(&mut rt);
         children.extend(rt_ids);
         if has_children {
@@ -468,8 +496,7 @@ impl<'a> Converter<'a> {
                 continue;
             };
             let row_id = row.id.clone();
-            let cell_ids =
-                self.table_row_cells(&row_id, table_row, has_row_header, bag);
+            let cell_ids = self.table_row_cells(&row_id, table_row, has_row_header, bag);
             bag.push(
                 TableRow {
                     id: row_id.clone(),
@@ -607,13 +634,17 @@ impl<'a> Converter<'a> {
     ) -> Result<ComponentId, Error> {
         let id = item.id.clone();
         let (rt_items, has_children, todo_mark) = match &item.block {
-            Block::BulletedListItem { bulleted_list_item: BulletedListItemBlock { rich_text, .. } } => {
-                (rich_text.as_slice(), item.has_children, None)
-            }
-            Block::NumberedListItem { numbered_list_item: NumberedListItemBlock { rich_text, .. } } => {
-                (rich_text.as_slice(), item.has_children, None)
-            }
-            Block::ToDo { to_do: ToDoBlock { rich_text, checked, .. } } => {
+            Block::BulletedListItem {
+                bulleted_list_item: BulletedListItemBlock { rich_text, .. },
+            } => (rich_text.as_slice(), item.has_children, None),
+            Block::NumberedListItem {
+                numbered_list_item: NumberedListItemBlock { rich_text, .. },
+            } => (rich_text.as_slice(), item.has_children, None),
+            Block::ToDo {
+                to_do: ToDoBlock {
+                    rich_text, checked, ..
+                },
+            } => {
                 let mark = if *checked { "☑ " } else { "☐ " };
                 (rich_text.as_slice(), item.has_children, Some(mark))
             }
@@ -659,7 +690,7 @@ impl<'a> Converter<'a> {
 
 // --- free helpers ----------------------------------------------------------
 
-fn list_style(block: &Block) -> Option<ListStyle> {
+pub(crate) fn list_style(block: &Block) -> Option<ListStyle> {
     match block {
         Block::BulletedListItem { .. } | Block::ToDo { .. } => Some(ListStyle::Unordered),
         Block::NumberedListItem { .. } => Some(ListStyle::Ordered),
@@ -858,4 +889,3 @@ fn unsupported_label(block: &Block) -> String {
         Block::Unsupported { unsupported } => format!("unsupported:{}", unsupported.block_type),
     }
 }
-

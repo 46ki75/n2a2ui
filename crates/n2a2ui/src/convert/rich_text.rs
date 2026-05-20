@@ -8,9 +8,7 @@
 //! as their text.
 
 use a2ui::v0_9::{Component, ComponentId, Decoration, Icon, LinkText, RichText};
-use notionrs::types::prelude::{
-    Color, Mention, RichText as NotionRichText, RichTextAnnotations,
-};
+use notionrs::types::prelude::{Color, Mention, RichText as NotionRichText, RichTextAnnotations};
 
 use crate::id::child_id;
 

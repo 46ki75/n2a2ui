@@ -104,6 +104,63 @@ fn heading_level_serializes_as_number() {
 }
 
 #[test]
+fn surface_to_messages_emits_create_then_update() {
+    let mut surface = Surface::new("root");
+    surface.insert(
+        Column {
+            id: "root".into(),
+            children: ChildList::from_ids(["p1"]),
+            ..Default::default()
+        }
+        .into(),
+    );
+    surface.insert(
+        Paragraph {
+            id: "p1".into(),
+            ..Default::default()
+        }
+        .into(),
+    );
+
+    let messages = surface.to_messages("my-surface", BLOCK_CATALOG_ID);
+    assert_eq!(messages.len(), 2);
+
+    match &messages[0].body {
+        MessageBody::CreateSurface(cs) => {
+            assert_eq!(cs.surface_id, "my-surface");
+            assert_eq!(cs.catalog_id, BLOCK_CATALOG_ID);
+        }
+        other => panic!("expected CreateSurface, got {other:?}"),
+    }
+    match &messages[1].body {
+        MessageBody::UpdateComponents(uc) => {
+            assert_eq!(uc.surface_id, "my-surface");
+            assert_eq!(uc.components.len(), 2);
+            assert_eq!(uc.components[0].id(), "root");
+            assert_eq!(uc.components[1].id(), "p1");
+        }
+        other => panic!("expected UpdateComponents, got {other:?}"),
+    }
+}
+
+#[test]
+fn message_envelope_wire_shape_round_trips() {
+    let msg = Message::new(CreateSurface {
+        surface_id: "s1".into(),
+        catalog_id: BLOCK_CATALOG_ID.into(),
+        theme: None,
+        send_data_model: Some(true),
+    });
+    let json = serde_json::to_value(&msg).unwrap();
+    assert_eq!(json["version"], "v0.9");
+    assert_eq!(json["createSurface"]["surfaceId"], "s1");
+    assert_eq!(json["createSurface"]["sendDataModel"], true);
+
+    let parsed: Message = serde_json::from_value(json).unwrap();
+    assert_eq!(parsed, msg);
+}
+
+#[test]
 fn dynamic_string_round_trips_literal_binding_and_call() {
     let literal: DynamicString = "hello".into();
     let binding = DynamicString::Binding(DataBinding {

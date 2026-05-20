@@ -1,4 +1,4 @@
-use a2ui::v0_9::{ChildList, Column, Surface};
+use a2ui::v0_9::{BLOCK_CATALOG_ID, ChildList, Column, Message, Surface};
 use futures::TryStreamExt;
 use notionrs::PaginateExt;
 use notionrs::types::prelude::BlockResponse;
@@ -66,5 +66,17 @@ impl Client {
         }
 
         Ok(surface)
+    }
+
+    /// Convert a Notion block and render it as the v0.9 message sequence
+    /// (`createSurface` + `updateComponents`) bound to the Elmethis block
+    /// catalog. Equivalent to `convert_block(...).to_messages(...)`.
+    pub async fn convert_block_to_messages(
+        &self,
+        block_id: &str,
+        surface_id: impl Into<String>,
+    ) -> Result<Vec<Message>, Error> {
+        let surface = self.convert_block(block_id).await?;
+        Ok(surface.to_messages(surface_id, BLOCK_CATALOG_ID))
     }
 }

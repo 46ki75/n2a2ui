@@ -6,9 +6,7 @@
 //! decoration carrying the LaTeX source as their text.
 
 use a2ui::v0_9::{Component, ComponentId, Decoration, LinkText, RichText};
-use notionrs::types::prelude::{
-    Color, RichText as NotionRichText, RichTextAnnotations,
-};
+use notionrs::types::prelude::{Color, RichText as NotionRichText, RichTextAnnotations};
 
 use crate::id::child_id;
 
@@ -51,7 +49,12 @@ fn convert_single(id: &str, item: &NotionRichText) -> Component {
             annotations,
             href,
             ..
-        } => (equation.expression.clone(), *annotations, href.clone(), true),
+        } => (
+            equation.expression.clone(),
+            *annotations,
+            href.clone(),
+            true,
+        ),
     };
 
     if let Some(href) = href {

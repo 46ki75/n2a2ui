@@ -10,6 +10,7 @@
 //! Run with output:
 //!     cargo test -p notion-to-a2ui --test convert_block -- --nocapture
 
+use a2ui::v0_9::MessageBody;
 use notion_to_a2ui::client::Client;
 
 #[tokio::test]
@@ -51,5 +52,30 @@ async fn convert_block_against_live_notion() {
     );
 
     let json = serde_json::to_string_pretty(&surface).expect("serialize surface as JSON");
-    println!("{json}");
+    println!("--- surface ---\n{json}");
+
+    let messages = client
+        .convert_block_to_messages(&block_id, "notion-page")
+        .await
+        .expect("convert_block_to_messages should succeed");
+
+    assert_eq!(
+        messages.len(),
+        2,
+        "expected createSurface + updateComponents"
+    );
+    assert!(
+        matches!(messages[0].body, MessageBody::CreateSurface(_)),
+        "first message must be createSurface"
+    );
+    assert!(
+        matches!(messages[1].body, MessageBody::UpdateComponents(_)),
+        "second message must be updateComponents"
+    );
+
+    println!("--- messages (JSONL) ---");
+    for message in &messages {
+        let line = serde_json::to_string(message).expect("serialize message");
+        println!("{line}");
+    }
 }

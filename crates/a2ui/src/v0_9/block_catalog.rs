@@ -57,10 +57,32 @@ macro_rules! component_impls {
 }
 
 component_impls!(
-    RichText, LinkText, Icon, Row, Column, ColumnList, Heading, Paragraph,
-    List, ListItem, BlockQuote, Callout, Divider, Toggle, Bookmark, File,
-    BlockImage, CodeBlock, Katex, Mermaid, ContentTab, ContentTabs,
-    Table, TableRow, TableCell, Unsupported,
+    RichText,
+    LinkText,
+    Icon,
+    Row,
+    Column,
+    ColumnList,
+    Heading,
+    Paragraph,
+    List,
+    ListItem,
+    BlockQuote,
+    Callout,
+    Divider,
+    Toggle,
+    Bookmark,
+    File,
+    BlockImage,
+    CodeBlock,
+    Katex,
+    Mermaid,
+    ContentTab,
+    ContentTabs,
+    Table,
+    TableRow,
+    TableCell,
+    Unsupported,
 );
 
 // --- shared enums -----------------------------------------------------------

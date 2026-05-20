@@ -1,12 +1,12 @@
 [workspace]
 resolver = "3"
-members = ["crates/a2ui", "crates/notion-to-a2ui"]
+members = ["crates/a2ui", "crates/n2a2ui"]
 
 [workspace.package]
 edition = "2024"
 authors = ["Ikuma Yamashita"]
 license = "MIT"
-repository = "https://github.com/46ki75/notion-to-a2ui"
+repository = "https://github.com/46ki75/n2a2ui"
 
 [workspace.dependencies]
 serde = { version = "^1.0", features = ["derive"] }

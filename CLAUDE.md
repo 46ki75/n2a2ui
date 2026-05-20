@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Cargo workspace (edition 2024, resolver 3) with two member crates:
 
 - `crates/a2ui` — Rust types for the [A2UI](https://a2ui.dev) v0.9 Elmethis Block Catalog. Pure data model; no I/O. The wire schema is vendored at `crates/a2ui/schemas/v0_9/block_catalog.json`.
-- `crates/notion-to-a2ui` — converter that walks a Notion block tree (via `notionrs`) and emits an A2UI `Surface` (or the v0.9 message sequence that renders it).
+- `crates/n2a2ui` — converter that walks a Notion block tree (via `notionrs`) and emits an A2UI `Surface` (or the v0.9 message sequence that renders it).
 
 ## Commands
 
@@ -23,14 +23,14 @@ cargo test --lib
 
 # Run one crate's tests
 cargo test -p a2ui
-cargo test -p notion-to-a2ui
+cargo test -p n2a2ui
 
 # Run a single test by name
 cargo test -p a2ui surface_round_trip_preserves_order
 
 # Live integration test (skipped without env vars; .env at workspace root works)
 NOTION_API_KEY=... BLOCK_ID=... \
-  cargo test -p notion-to-a2ui --test convert_block -- --nocapture
+  cargo test -p n2a2ui --test convert_block -- --nocapture
 
 # Lint / format
 cargo clippy --all-targets
@@ -59,7 +59,7 @@ Adding a new component variant requires four edits in lockstep: define the struc
 
 `Message { version, #[serde(flatten)] body: MessageBody }` serializes as `{"version":"v0.9","createSurface":{...}}` — the v0.9 wire shape uses the body key as the discriminator (externally-tagged enum, camelCase). Body variants: `CreateSurface`, `UpdateComponents`, `UpdateDataModel`, `DeleteSurface`. `Surface::to_messages(surface_id, catalog_id)` emits the canonical `[createSurface, updateComponents]` pair that renders the whole surface in one round-trip.
 
-### Notion → A2UI conversion (`notion_to_a2ui`)
+### Notion → A2UI conversion (`n2a2ui`)
 
 `Client` holds a `notionrs::client::Client` and a `reqwest::Client` plus two behavior toggles:
 

@@ -1,4 +1,4 @@
-# notion-to-a2ui
+# n2a2ui
 
 Convert Notion blocks into [A2UI](https://a2ui.dev) v0.9 components, using
 the [Elmethis Block Catalog](https://46ki75.github.io/elmethis/a2ui/v0_9/block_catalog.json)
@@ -9,7 +9,7 @@ This workspace contains two crates:
 - [`a2ui`](./crates/a2ui) — Rust types for the A2UI v0.9 Elmethis Block
   Catalog (components, surface envelope, v0.9 message envelope,
   dynamic-value helpers). Pure data model, no I/O.
-- [`notion-to-a2ui`](./crates/notion-to-a2ui) — the converter; walks a
+- [`n2a2ui`](./crates/n2a2ui) — the converter; walks a
   Notion block tree with `notionrs` and emits either an A2UI `Surface`
   or the v0.9 message sequence that renders it.
 
@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let notionrs_client = notionrs::client::Client::new(notion_api_key);
     let reqwest_client = reqwest::Client::new();
 
-    let client = notion_to_a2ui::client::Client {
+    let client = n2a2ui::client::Client {
         notionrs_client,
         reqwest_client,
         enable_unsupported_block: true,
@@ -84,7 +84,7 @@ source with the `Katex` decoration.
 ## Tests
 
 `cargo test` runs the schema round-trip tests in `crates/a2ui` plus a
-live integration test in `crates/notion-to-a2ui/tests/convert_block.rs`.
+live integration test in `crates/n2a2ui/tests/convert_block.rs`.
 The integration test reads `NOTION_API_KEY` and `BLOCK_ID` from the
 environment (or a `.env` at the workspace root) and skips silently when
 either is missing, so contributors without credentials — and CI, which

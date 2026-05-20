@@ -8,10 +8,10 @@
 //! is unaffected.
 //!
 //! Run with output:
-//!     cargo test -p notion-to-a2ui --test convert_block -- --nocapture
+//!     cargo test -p n2a2ui --test convert_block -- --nocapture
 
 use a2ui::v0_9::MessageBody;
-use notion_to_a2ui::client::Client;
+use n2a2ui::client::Client;
 
 #[tokio::test]
 async fn convert_block_against_live_notion() {

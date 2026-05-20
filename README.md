@@ -38,11 +38,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Example: emit the v0.9 rendering messages
+## Example: emit the v0.9 rendering messages (eager)
 
-`convert_block_to_messages` is the typical entry point for streaming a
-Notion page into a renderer — it returns the `createSurface` +
-`updateComponents` pair already bound to the Elmethis catalog:
+`convert_block_to_messages` returns the full chunked render sequence,
+already bound to the Elmethis catalog — `createSurface`, then an
+`updateComponents` carrying an empty root `Column` (so the surface
+mounts immediately on the client), then one `updateComponents` per
+top-level Notion sibling group (a single block, or a consecutive run
+of list-items collapsed into one `List`). Each chunk re-sends the root
+`Column` with a growing `children` array — `updateComponents` is
+upsert-by-id per the v0.9 spec, so this is the canonical streaming
+shape, not redundant traffic.
 
 ```rust
 let messages = client
@@ -53,8 +59,30 @@ for message in &messages {
     println!("{}", serde_json::to_string(message)?);
 }
 // {"version":"v0.9","createSurface":{"surfaceId":"notion-page","catalogId":"..."}}
-// {"version":"v0.9","updateComponents":{"surfaceId":"notion-page","components":[...]}}
+// {"version":"v0.9","updateComponents":{"surfaceId":"notion-page","components":[{"id":"root","component":"Column","children":[]}]}}
+// {"version":"v0.9","updateComponents":{"surfaceId":"notion-page","components":[...,{"id":"root","component":"Column","children":["<id-1>"]}]}}
+// {"version":"v0.9","updateComponents":{"surfaceId":"notion-page","components":[...,{"id":"root","component":"Column","children":["<id-1>","<id-2>"]}]}}
+// ...
 ```
+
+## Example: stream the v0.9 rendering messages
+
+For progressive rendering, drive the underlying stream directly — it
+yields each `Message` as soon as the corresponding Notion sibling group
+is converted, instead of buffering everything until the walk finishes:
+
+```rust
+use futures::TryStreamExt;
+
+let mut stream = client.convert_block_stream(&block_id, "notion-page");
+while let Some(message) = stream.try_next().await? {
+    println!("{}", serde_json::to_string(&message)?);
+}
+```
+
+`convert_block_to_messages` is literally `convert_block_stream(...).try_collect().await`,
+so both APIs emit the same sequence — streaming just lets the renderer
+display each chunk as it arrives.
 
 ## Behavior toggles
 

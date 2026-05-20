@@ -81,6 +81,14 @@ async fn convert_block_against_live_notion() {
         let line = serde_json::to_string(message).expect("serialize message");
         println!("{line}");
     }
+
+    let out_path = std::path::Path::new("../../.out/test.json");
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent).expect("create .out directory");
+    }
+    let pretty = serde_json::to_string_pretty(&messages).expect("serialize messages");
+    std::fs::write(out_path, pretty).expect("write messages JSON");
+    println!("wrote {} messages to {}", messages.len(), out_path.display());
 }
 
 #[tokio::test]

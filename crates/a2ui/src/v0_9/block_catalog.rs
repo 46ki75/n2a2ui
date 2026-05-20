@@ -472,10 +472,12 @@ pub struct ContentTab {
     pub accessibility: Option<AccessibilityAttributes>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub weight: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    pub labels: Vec<ComponentId>,
-    pub contents: Vec<ComponentId>,
+    /// Inline content that renders the tab's button. Typically a list of
+    /// `RichText` / `LinkText` / `Icon` ids.
+    pub label: ChildList,
+    /// Block content shown when this tab is active. Use a static list of
+    /// component ids, or a template binding for data-driven panels.
+    pub content: ChildList,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

@@ -11,9 +11,9 @@
 
 use a2ui::v0_9::{
     BlockImage, BlockQuote, Bookmark, Callout, CalloutType, ChildList, CodeBlock, Column,
-    ColumnList, Component, ComponentId, Divider, File as FileComponent, Heading, HeadingLevel,
-    Katex, List, ListItem, ListStyle, Mermaid, Paragraph, RichText, Table, TableCell, TableRow,
-    Toggle, Unsupported,
+    ColumnList, Component, ComponentId, ContentTab, ContentTabs, Divider, File as FileComponent,
+    Heading, HeadingLevel, Icon, Katex, List, ListItem, ListStyle, Mermaid, Paragraph, RichText,
+    Table, TableCell, TableRow, Toggle, Unsupported,
 };
 use futures::TryStreamExt;
 use futures::future::BoxFuture;
@@ -216,6 +216,7 @@ impl<'a> Converter<'a> {
                     .into()
                 }
                 Block::Table { table } => self.table(&id, table.has_column_header, table.has_row_header, bag).await?,
+                Block::Tab { .. } => self.tab(&id, notion.has_children, bag).await?,
                 Block::SyncedBlock { .. } => {
                     // Render the synced block transparently as a Column of its children.
                     let mut children = Vec::new();
@@ -323,9 +324,18 @@ impl<'a> Converter<'a> {
         has_children: bool,
         bag: &mut Vec<Component>,
     ) -> Result<Component, Error> {
-        let (mut children, mut rt) =
+        let mut children = Vec::new();
+        if let Some(icon) = block.icon.as_ref() {
+            let icon_id = child_id(id, "icon", 0);
+            if let Some(component) = inline_icon_component(&icon_id, icon) {
+                bag.push(component);
+                children.push(icon_id);
+            }
+        }
+        let (rt_ids, mut rt) =
             rich_text::convert_rich_texts(id, "rich_text", &block.rich_text);
         bag.append(&mut rt);
+        children.extend(rt_ids);
         if has_children {
             let (cs, comps) = self.convert_children(id).await?;
             bag.extend(comps);
@@ -516,6 +526,56 @@ impl<'a> Converter<'a> {
         cell_ids
     }
 
+    /// Convert a Notion `Tab` block (a tabbed container whose direct
+    /// children are paragraphs serving as tabs) into a `ContentTabs`
+    /// component, with one `ContentTab` per child paragraph.
+    ///
+    /// Per the Notion spec, each child paragraph's `rich_text` is the
+    /// tab's label and its `children` are the tab's panel content.
+    /// Non-paragraph children are ignored.
+    async fn tab(
+        &self,
+        id: &str,
+        has_children: bool,
+        bag: &mut Vec<Component>,
+    ) -> Result<Component, Error> {
+        let mut tab_ids = Vec::new();
+        if has_children {
+            let children = self.fetch_children(id).await?;
+            for child in &children {
+                let Block::Paragraph { paragraph } = &child.block else {
+                    continue;
+                };
+                let tab_id = child.id.clone();
+                let (label_ids, mut label_rt) =
+                    rich_text::convert_rich_texts(&tab_id, "label", &paragraph.rich_text);
+                bag.append(&mut label_rt);
+                let mut content_ids = Vec::new();
+                if child.has_children {
+                    let (cs, comps) = self.convert_children(&tab_id).await?;
+                    bag.extend(comps);
+                    content_ids = cs;
+                }
+                bag.push(
+                    ContentTab {
+                        id: tab_id.clone(),
+                        label: ChildList::from_ids(label_ids),
+                        content: ChildList::from_ids(content_ids),
+                        ..Default::default()
+                    }
+                    .into(),
+                );
+                tab_ids.push(tab_id);
+            }
+        }
+        Ok(ContentTabs {
+            id: id.into(),
+            children: tab_ids,
+            ..Default::default()
+        }
+        .into())
+    }
+
     async fn emit_list(
         &self,
         items: &[BlockResponse],
@@ -673,6 +733,48 @@ fn file_component(id: &str, file: &NotionFile) -> Component {
 fn notion_page_url(block_id: &str) -> String {
     let stripped: String = block_id.chars().filter(|c| *c != '-').collect();
     format!("https://www.notion.so/{stripped}")
+}
+
+/// Render a Notion `EmojiAndIcon` as an inline A2UI component:
+/// - `Emoji` becomes a `RichText` carrying the Unicode emoji character
+///   (the catalog has no glyph component, and a literal emoji string
+///   renders inline correctly without needing an image fetch).
+/// - `CustomEmoji` and `File` become an `Icon` pointing at their URL.
+/// - `Icon` (Notion's named built-in icons) has no URL we can serve,
+///   so it's skipped.
+fn inline_icon_component(id: &str, icon: &EmojiAndIcon) -> Option<Component> {
+    match icon {
+        EmojiAndIcon::Emoji(emoji) => Some(
+            RichText {
+                id: id.into(),
+                text: emoji.emoji.clone().into(),
+                ..Default::default()
+            }
+            .into(),
+        ),
+        EmojiAndIcon::CustomEmoji(custom) => Some(
+            Icon {
+                id: id.into(),
+                src: custom.custom_emoji.url.clone(),
+                alt: Some(custom.custom_emoji.name.clone()),
+                ..Default::default()
+            }
+            .into(),
+        ),
+        EmojiAndIcon::File(file) => {
+            let src = file_url(file)?;
+            Some(
+                Icon {
+                    id: id.into(),
+                    src,
+                    alt: file_name(file),
+                    ..Default::default()
+                }
+                .into(),
+            )
+        }
+        EmojiAndIcon::Icon(_) => None,
+    }
 }
 
 /// Use the callout's emoji icon as a hint for the A2UI `CalloutType`.

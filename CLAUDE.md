@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Cargo workspace (edition 2024, resolver 3) with two member crates:
 
 - `crates/a2ui` — Rust types for the [A2UI](https://a2ui.dev) v0.9 Elmethis Block Catalog. Pure data model; no I/O. The wire schema is vendored at `crates/a2ui/schemas/v0_9/block_catalog.json`.
-- `crates/notion-to-a2ui` — converter that walks a Notion block tree (via `notionrs`) and emits an A2UI `Surface`. Currently a stub: `Client::convert_block` returns an empty `Column` root. The full conversion is being ported in phases.
+- `crates/notion-to-a2ui` — converter that walks a Notion block tree (via `notionrs`) and emits an A2UI `Surface` (or the v0.9 message sequence that renders it).
 
 ## Commands
 
@@ -28,6 +28,10 @@ cargo test -p notion-to-a2ui
 # Run a single test by name
 cargo test -p a2ui surface_round_trip_preserves_order
 
+# Live integration test (skipped without env vars; .env at workspace root works)
+NOTION_API_KEY=... BLOCK_ID=... \
+  cargo test -p notion-to-a2ui --test convert_block -- --nocapture
+
 # Lint / format
 cargo clippy --all-targets
 cargo fmt
@@ -47,8 +51,13 @@ A `Surface` is `{ root: ComponentId, components: IndexMap<ComponentId, Component
 - `HeadingLevel` round-trips as `u8` 1..=6, not a string.
 - All optional fields use `skip_serializing_if = "Option::is_none"` — keep this when adding new fields so the wire stays minimal.
 - `DynamicString` / `ChildList` are `#[serde(untagged)]` unions of literal vs. binding vs. template — order of variants matters for deserialization.
+- `ContentTab` uses `label: ChildList` and `content: ChildList` (singular, both ChildList). Older shapes with `title`/`labels[]`/`contents[]` are gone — keep the rename in sync with `@elmethis/core`'s `ContentTabApi`.
 
 Adding a new component variant requires four edits in lockstep: define the struct in `block_catalog.rs`, add it to the `Component` enum, add it to the `component_impls!` macro list (this generates `From<T>` and `Component::id()`), and add a round-trip test in `tests/schema.rs`.
+
+### v0.9 message envelope (`a2ui::v0_9::message`)
+
+`Message { version, #[serde(flatten)] body: MessageBody }` serializes as `{"version":"v0.9","createSurface":{...}}` — the v0.9 wire shape uses the body key as the discriminator (externally-tagged enum, camelCase). Body variants: `CreateSurface`, `UpdateComponents`, `UpdateDataModel`, `DeleteSurface`. `Surface::to_messages(surface_id, catalog_id)` emits the canonical `[createSurface, updateComponents]` pair that renders the whole surface in one round-trip.
 
 ### Notion → A2UI conversion (`notion_to_a2ui`)
 
@@ -57,10 +66,22 @@ Adding a new component variant requires four edits in lockstep: define the struc
 - `enable_unsupported_block` — when false, unknown block types are dropped; when true, they become `Unsupported` components carrying a `details` string.
 - `enable_fetch_image_meta` — when true, image blocks are fetched once with `reqwest` + `imagesize` to populate `width`/`height` on `BlockImage`. This adds a network round-trip per image.
 
-**Component id strategy** (`src/id.rs`): Notion block UUIDs are reused verbatim as `ComponentId`s. For components the converter *synthesizes* (the page-level root, the per-run `RichText`/`LinkText`/`Icon` inside a rich-text array, per-row table cells, etc.), ids are minted via `child_id(parent, slot, index)` → `"{parent}::{slot}/{index}"`. This is load-bearing: the same Notion page must always produce the same A2UI ids so downstream diffs stay stable. The synthesized page root uses the constant `ROOT_ID = "root"`.
+`Client::convert_block(block_id)` returns a `Surface`; `Client::convert_block_to_messages(block_id, surface_id)` returns the v0.9 message sequence bound to `BLOCK_CATALOG_ID`.
+
+Conversion lives in `src/convert/`. `Converter::convert_siblings` walks each level and groups consecutive `bulleted_list_item` / `numbered_list_item` / `to_do` siblings into a single `List` (the group id is `format!("{first_item_id}::list")`) so the wire shape matches A2UI's nested-list model rather than Notion's flat sibling layout. To-do checkboxes render via a synthesized `RichText` prefix child (`☐ ` / `☑ `).
+
+**Component id strategy** (`src/id.rs`): Notion block UUIDs are reused verbatim as `ComponentId`s. For components the converter *synthesizes* (the page-level root, the per-run `RichText`/`LinkText`/`Icon` inside a rich-text array, per-row table cells, callout/page leading icons, list-group wrappers, to-do prefix markers, etc.), ids are minted via `child_id(parent, slot, index)` → `"{parent}::{slot}/{index}"`. This is load-bearing: the same Notion page must always produce the same A2UI ids so downstream diffs stay stable. The synthesized page root uses the constant `ROOT_ID = "root"`.
+
+**Inline icon mapping** (`src/convert/rich_text.rs` + `inline_icon_component` in `src/convert/mod.rs`):
+
+- A `Mention::CustomEmoji` rich-text run becomes an A2UI `Icon { src = custom_emoji.url, alt = name }` instead of a plain `RichText`. This applies inside every container that uses `convert_rich_texts` (paragraph, heading, quote, callout, toggle summary, list item, table cell, content-tab label).
+- A callout's leading `block.icon` is rendered as a synthesized child prepended to the callout's children — `Emoji` → `RichText` carrying the Unicode glyph, `CustomEmoji` / `File` → `Icon` with the URL. The same icon still feeds `callout_type_from_icon` for the `CalloutType` hint.
+
+**Tab → ContentTabs mapping**: one Notion `tab` block becomes one `ContentTabs`; each child paragraph becomes one `ContentTab` where the paragraph's `rich_text` is the `label` ChildList and its children are the `content` ChildList.
 
 ## Conventions
 
 - PRs target `develop` or `release/*`, not `main` (see `.github/pull_request_template.md`).
 - Workspace deps (`serde`, `serde_json`, `indexmap`) are declared once in the root `Cargo.toml` and pulled into members via `{ workspace = true }` — add new shared deps there, not per-crate.
 - The `a2ui` crate must stay I/O-free (no `reqwest`, `tokio`, etc.) — it's the pure schema crate consumed by the converter and potentially other producers.
+- When changing a component's schema in `crates/a2ui`, mirror the same change in the upstream TypeScript catalog at `/home/ikuma/org/46ki75/elmethis/packages/core/src/a2ui/v0_9/block-catalog.ts` (and the matching Qwik renderer/story/spec under `packages/qwik/src/components/a2ui/catalog/`). The Rust schema is a vendored mirror of that source of truth.

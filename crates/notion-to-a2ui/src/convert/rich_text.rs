@@ -1,12 +1,16 @@
 //! Convert a Notion `rich_text` array into A2UI inline components.
 //!
 //! Each Notion rich-text entry becomes either a `RichText` (plain run
-//! with optional decoration / color) or a `LinkText` (when `href` is
-//! set). Equation runs are emitted as `RichText` with the `Katex`
-//! decoration carrying the LaTeX source as their text.
+//! with optional decoration / color), a `LinkText` (when `href` is
+//! set), or an `Icon` (for `custom_emoji` mentions — their image URL
+//! is the natural inline visual). Equation runs are emitted as
+//! `RichText` with the `Katex` decoration carrying the LaTeX source
+//! as their text.
 
-use a2ui::v0_9::{Component, ComponentId, Decoration, LinkText, RichText};
-use notionrs::types::prelude::{Color, RichText as NotionRichText, RichTextAnnotations};
+use a2ui::v0_9::{Component, ComponentId, Decoration, Icon, LinkText, RichText};
+use notionrs::types::prelude::{
+    Color, Mention, RichText as NotionRichText, RichTextAnnotations,
+};
 
 use crate::id::child_id;
 
@@ -31,6 +35,20 @@ pub fn convert_rich_texts(
 }
 
 fn convert_single(id: &str, item: &NotionRichText) -> Component {
+    if let NotionRichText::Mention {
+        mention: Mention::CustomEmoji { custom_emoji },
+        ..
+    } = item
+    {
+        return Icon {
+            id: id.into(),
+            src: custom_emoji.url.clone(),
+            alt: Some(custom_emoji.name.clone()),
+            ..Default::default()
+        }
+        .into();
+    }
+
     let (plain, annotations, href, is_equation) = match item {
         NotionRichText::Text {
             plain_text,

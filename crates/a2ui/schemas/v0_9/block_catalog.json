@@ -770,29 +770,19 @@
             "component": {
               "const": "ContentTab"
             },
-            "title": {
-              "type": "string",
-              "description": "Accessible title for the tab (also used as fallback label text)."
+            "label": {
+              "$ref": "#/$defs/ChildList",
+              "description": "Inline content that renders the tab's button (typically RichText / LinkText / Icon ids), or a list template."
             },
-            "labels": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Ordered list of inline component IDs that render the tab button label."
-            },
-            "contents": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Ordered list of component IDs that render the tab panel content."
+            "content": {
+              "$ref": "#/$defs/ChildList",
+              "description": "Block content shown when this tab is active, or a list template."
             }
           },
           "required": [
             "component",
-            "labels",
-            "contents"
+            "label",
+            "content"
           ]
         }
       ],

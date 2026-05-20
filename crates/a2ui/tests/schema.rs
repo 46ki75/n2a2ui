@@ -161,6 +161,28 @@ fn message_envelope_wire_shape_round_trips() {
 }
 
 #[test]
+fn content_tab_uses_child_list_label_and_content() {
+    let tab: Component = ContentTab {
+        id: "tab1".into(),
+        label: ChildList::from_ids(["tab1_label_rt"]),
+        content: ChildList::from_ids(["tab1_para"]),
+        ..Default::default()
+    }
+    .into();
+    let json = serde_json::to_value(&tab).unwrap();
+    assert_eq!(json["component"], "ContentTab");
+    assert_eq!(json["label"][0], "tab1_label_rt");
+    assert_eq!(json["content"][0], "tab1_para");
+    assert!(
+        json.get("labels").is_none() && json.get("contents").is_none(),
+        "old labels/contents fields must be gone"
+    );
+
+    let parsed: Component = serde_json::from_value(json).unwrap();
+    assert_eq!(parsed, tab);
+}
+
+#[test]
 fn dynamic_string_round_trips_literal_binding_and_call() {
     let literal: DynamicString = "hello".into();
     let binding = DynamicString::Binding(DataBinding {

@@ -7,11 +7,13 @@ as the component vocabulary.
 This workspace contains two crates:
 
 - [`a2ui`](./crates/a2ui) — Rust types for the A2UI v0.9 Elmethis Block
-  Catalog (components, surface envelope, dynamic-value helpers).
+  Catalog (components, surface envelope, v0.9 message envelope,
+  dynamic-value helpers). Pure data model, no I/O.
 - [`notion-to-a2ui`](./crates/notion-to-a2ui) — the converter; walks a
-  Notion block tree and emits an A2UI `Surface`.
+  Notion block tree with `notionrs` and emits either an A2UI `Surface`
+  or the v0.9 message sequence that renders it.
 
-## Example
+## Example: convert a Notion page to a Surface
 
 ```rust
 #[tokio::main]
@@ -20,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let notion_api_key = std::env::var("NOTION_API_KEY")?;
     let block_id = std::env::var("BLOCK_ID")?;
 
-    let notionrs_client = notionrs::client::Client::new().secret(notion_api_key);
+    let notionrs_client = notionrs::client::Client::new(notion_api_key);
     let reqwest_client = reqwest::Client::new();
 
     let client = notion_to_a2ui::client::Client {
@@ -35,3 +37,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Example: emit the v0.9 rendering messages
+
+`convert_block_to_messages` is the typical entry point for streaming a
+Notion page into a renderer — it returns the `createSurface` +
+`updateComponents` pair already bound to the Elmethis catalog:
+
+```rust
+let messages = client
+    .convert_block_to_messages(&block_id, "notion-page")
+    .await?;
+
+for message in &messages {
+    println!("{}", serde_json::to_string(message)?);
+}
+// {"version":"v0.9","createSurface":{"surfaceId":"notion-page","catalogId":"..."}}
+// {"version":"v0.9","updateComponents":{"surfaceId":"notion-page","components":[...]}}
+```
+
+## Behavior toggles
+
+- `enable_unsupported_block` — when `true`, block types the converter
+  doesn't know about render as an `Unsupported` component carrying a
+  `details` string; when `false`, they are silently dropped.
+- `enable_fetch_image_meta` — when `true`, each image block is fetched
+  once with `reqwest` + `imagesize` so the emitted `BlockImage` carries
+  intrinsic `width` / `height`. Adds a network round-trip per image; off
+  by default.
+
+## What gets converted
+
+Paragraphs, headings (1–4), quotes, callouts (with their leading icon
+rendered inline), toggles, dividers, code (Mermaid is detected),
+equations (Katex), images / files / pdf / audio / video, bookmarks
+(embed / link_preview / child_page / child_database all normalise to
+`Bookmark`), columns + column_list, tables, synced blocks, and tabs.
+Consecutive `bulleted_list_item` / `numbered_list_item` / `to_do`
+siblings collapse into a single A2UI `List`.
+
+Rich-text runs convert to `RichText`, `LinkText`, or — for
+`custom_emoji` mentions — an inline `Icon` pointing at the emoji's URL.
+Equations inside rich text become a `RichText` carrying the LaTeX
+source with the `Katex` decoration.
+
+## Tests
+
+`cargo test` runs the schema round-trip tests in `crates/a2ui` plus a
+live integration test in `crates/notion-to-a2ui/tests/convert_block.rs`.
+The integration test reads `NOTION_API_KEY` and `BLOCK_ID` from the
+environment (or a `.env` at the workspace root) and skips silently when
+either is missing, so contributors without credentials — and CI, which
+runs `cargo test --lib` — are unaffected.

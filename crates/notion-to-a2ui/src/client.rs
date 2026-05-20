@@ -1,9 +1,6 @@
 use a2ui::v0_9::{BLOCK_CATALOG_ID, ChildList, Column, Message, Surface};
-use futures::TryStreamExt;
-use notionrs::PaginateExt;
-use notionrs::types::prelude::BlockResponse;
 
-use crate::convert;
+use crate::convert::Converter;
 use crate::error::Error;
 use crate::id::ROOT_ID;
 
@@ -24,35 +21,21 @@ pub struct Client {
 impl Client {
     /// Convert a Notion block (typically a page id) into an A2UI surface.
     ///
-    /// Walks `block_id`'s direct children via `get_block_children` (paginated),
-    /// converts each known block into an A2UI component, and wraps them in a
-    /// `Column` root. Currently only `paragraph` and `heading_1..4` are
-    /// recognized — see `crate::convert`. Other kinds either become
-    /// `Unsupported` placeholders or are skipped based on
-    /// `enable_unsupported_block`.
+    /// Walks `block_id`'s direct children via `get_block_children`
+    /// (paginated), recursively converts each block to its A2UI component
+    /// equivalent, and wraps the top-level result in a `Column` root.
+    /// Unrecognized block types either become `Unsupported` placeholders
+    /// or are skipped based on `enable_unsupported_block`.
     pub async fn convert_block(&self, block_id: &str) -> Result<Surface, Error> {
-        let blocks: Vec<BlockResponse> = self
-            .notionrs_client
-            .get_block_children()
-            .block_id(block_id)
-            .into_stream()
-            .try_collect()
-            .await?;
+        let converter = Converter {
+            notionrs: &self.notionrs_client,
+            reqwest: &self.reqwest_client,
+            enable_unsupported_block: self.enable_unsupported_block,
+            enable_fetch_image_meta: self.enable_fetch_image_meta,
+        };
+        let (root_children, components) = converter.convert_children(block_id).await?;
 
         let mut surface = Surface::new(ROOT_ID);
-        let mut root_children: Vec<String> = Vec::new();
-        let mut pending: Vec<a2ui::v0_9::Component> = Vec::new();
-
-        for block in &blocks {
-            let Some((child_id, components)) =
-                convert::convert_block(block, self.enable_unsupported_block)
-            else {
-                continue;
-            };
-            root_children.push(child_id);
-            pending.extend(components);
-        }
-
         surface.insert(
             Column {
                 id: ROOT_ID.into(),
@@ -61,10 +44,9 @@ impl Client {
             }
             .into(),
         );
-        for component in pending {
+        for component in components {
             surface.insert(component);
         }
-
         Ok(surface)
     }
 
@@ -80,3 +62,4 @@ impl Client {
         Ok(surface.to_messages(surface_id, BLOCK_CATALOG_ID))
     }
 }
+

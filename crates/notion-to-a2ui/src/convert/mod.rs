@@ -1,86 +1,718 @@
 //! Notion → A2UI block dispatch.
 //!
-//! Phase 1 only handles `paragraph` and `heading_1..4`. Everything else
-//! either becomes an `Unsupported` placeholder (when the client has
-//! `enable_unsupported_block = true`) or is skipped.
+//! [`Converter`] holds the notionrs + reqwest clients plus the runtime
+//! toggles, so per-block handlers can recurse (via `BoxFuture`) into
+//! `has_children` subtrees and optionally fetch image dimensions.
+//!
+//! Sibling grouping happens in [`Converter::convert_siblings`]:
+//! consecutive `bulleted_list_item` / `numbered_list_item` / `to_do`
+//! blocks collapse into a single `List` so the wire output matches the
+//! A2UI block model rather than Notion's flat sibling layout.
 
 use a2ui::v0_9::{
-    ChildList, Component, ComponentId, Heading, HeadingLevel, Paragraph, Unsupported,
+    BlockImage, BlockQuote, Bookmark, Callout, CalloutType, ChildList, CodeBlock, Column,
+    ColumnList, Component, ComponentId, Divider, File as FileComponent, Heading, HeadingLevel,
+    Katex, List, ListItem, ListStyle, Mermaid, Paragraph, RichText, Table, TableCell, TableRow,
+    Toggle, Unsupported,
 };
-use notionrs::types::prelude::{Block, BlockResponse, RichText as NotionRichText};
+use futures::TryStreamExt;
+use futures::future::BoxFuture;
+use notionrs::PaginateExt;
+use notionrs::types::prelude::{
+    Block, BlockResponse, BookmarkBlock, BulletedListItemBlock, CalloutBlock, EmojiAndIcon,
+    EquationBlock, File as NotionFile, Language, NumberedListItemBlock, ParagraphBlock,
+    QuoteBlock, RichText as NotionRichText, TableRowBlock, ToDoBlock, ToggleBlock,
+};
+
+use crate::error::Error;
+use crate::id::child_id;
 
 pub mod rich_text;
 
-/// Convert one Notion block into an A2UI component plus any synthesized
-/// descendants. The returned `ComponentId` is the id the parent should
-/// reference; the `Vec<Component>` is everything to insert into the
-/// surface (root of the subtree first).
-///
-/// Returns `None` to signal "skip this block" — used for unsupported
-/// kinds when `enable_unsupported_block` is false.
-pub fn convert_block(
-    notion: &BlockResponse,
-    enable_unsupported_block: bool,
-) -> Option<(ComponentId, Vec<Component>)> {
-    let id = notion.id.clone();
-    let mut bag: Vec<Component> = Vec::new();
-
-    let component: Component = match &notion.block {
-        Block::Paragraph { paragraph } => {
-            let (child_ids, mut children) =
-                rich_text::convert_rich_texts(&id, "rich_text", &paragraph.rich_text);
-            bag.append(&mut children);
-            Paragraph {
-                id: id.clone(),
-                children: ChildList::from_ids(child_ids),
-                ..Default::default()
-            }
-            .into()
-        }
-        Block::Heading1 { heading_1 } => {
-            heading(&id, HeadingLevel::H1, &heading_1.rich_text, &mut bag)
-        }
-        Block::Heading2 { heading_2 } => {
-            heading(&id, HeadingLevel::H2, &heading_2.rich_text, &mut bag)
-        }
-        Block::Heading3 { heading_3 } => {
-            heading(&id, HeadingLevel::H3, &heading_3.rich_text, &mut bag)
-        }
-        Block::Heading4 { heading_4 } => {
-            heading(&id, HeadingLevel::H4, &heading_4.rich_text, &mut bag)
-        }
-        other => {
-            if !enable_unsupported_block {
-                return None;
-            }
-            Unsupported {
-                id: id.clone(),
-                details: Some(unsupported_label(other)),
-                ..Default::default()
-            }
-            .into()
-        }
-    };
-
-    bag.insert(0, component);
-    Some((id, bag))
+/// Stateful Notion → A2UI converter. Holds the network clients so
+/// per-block handlers can recurse into children and (optionally) probe
+/// image dimensions.
+pub(crate) struct Converter<'a> {
+    pub notionrs: &'a notionrs::client::Client,
+    pub reqwest: &'a reqwest::Client,
+    pub enable_unsupported_block: bool,
+    pub enable_fetch_image_meta: bool,
 }
 
-fn heading(
-    id: &str,
-    level: HeadingLevel,
-    items: &[NotionRichText],
-    bag: &mut Vec<Component>,
-) -> Component {
-    let (child_ids, mut children) = rich_text::convert_rich_texts(id, "rich_text", items);
-    bag.append(&mut children);
-    Heading {
+impl<'a> Converter<'a> {
+    /// Fetch `parent_id`'s direct children, convert them, and return the
+    /// ids the parent should reference plus every synthesized component
+    /// to insert into the surface.
+    pub async fn convert_children(
+        &self,
+        parent_id: &str,
+    ) -> Result<(Vec<ComponentId>, Vec<Component>), Error> {
+        let blocks = self.fetch_children(parent_id).await?;
+        let mut bag = Vec::new();
+        let ids = self.convert_siblings(&blocks, &mut bag).await?;
+        Ok((ids, bag))
+    }
+
+    async fn fetch_children(&self, parent_id: &str) -> Result<Vec<BlockResponse>, Error> {
+        let blocks: Vec<BlockResponse> = self
+            .notionrs
+            .get_block_children()
+            .block_id(parent_id)
+            .into_stream()
+            .try_collect()
+            .await?;
+        Ok(blocks)
+    }
+
+    /// Convert a sequence of sibling blocks, grouping consecutive list
+    /// items into a single `List` so the structure matches the A2UI
+    /// adjacency model rather than Notion's flat layout.
+    fn convert_siblings<'b>(
+        &'b self,
+        blocks: &'b [BlockResponse],
+        bag: &'b mut Vec<Component>,
+    ) -> BoxFuture<'b, Result<Vec<ComponentId>, Error>> {
+        Box::pin(async move {
+            let mut ids = Vec::new();
+            let mut i = 0;
+            while i < blocks.len() {
+                let style = list_style(&blocks[i].block);
+                if let Some(style) = style {
+                    let mut j = i + 1;
+                    while j < blocks.len() && list_style(&blocks[j].block) == Some(style) {
+                        j += 1;
+                    }
+                    let list_id = self.emit_list(&blocks[i..j], style, bag).await?;
+                    ids.push(list_id);
+                    i = j;
+                } else if let Some(id) = self.convert_block(&blocks[i], bag).await? {
+                    ids.push(id);
+                    i += 1;
+                } else {
+                    i += 1;
+                }
+            }
+            Ok(ids)
+        })
+    }
+
+    fn convert_block<'b>(
+        &'b self,
+        notion: &'b BlockResponse,
+        bag: &'b mut Vec<Component>,
+    ) -> BoxFuture<'b, Result<Option<ComponentId>, Error>> {
+        Box::pin(async move {
+            let id = notion.id.clone();
+            let component: Component = match &notion.block {
+                Block::Paragraph { paragraph } => {
+                    self.paragraph(&id, paragraph, notion.has_children, bag)
+                        .await?
+                }
+                Block::Heading1 { heading_1 } => {
+                    self.heading(&id, HeadingLevel::H1, &heading_1.rich_text, bag)
+                }
+                Block::Heading2 { heading_2 } => {
+                    self.heading(&id, HeadingLevel::H2, &heading_2.rich_text, bag)
+                }
+                Block::Heading3 { heading_3 } => {
+                    self.heading(&id, HeadingLevel::H3, &heading_3.rich_text, bag)
+                }
+                Block::Heading4 { heading_4 } => {
+                    self.heading(&id, HeadingLevel::H4, &heading_4.rich_text, bag)
+                }
+                Block::Quote { quote } => self.quote(&id, quote, notion.has_children, bag).await?,
+                Block::Callout { callout } => {
+                    self.callout(&id, callout, notion.has_children, bag).await?
+                }
+                Block::Toggle { toggle } => {
+                    self.toggle(&id, toggle, notion.has_children, bag).await?
+                }
+                Block::Divider { .. } => Divider {
+                    id: id.clone(),
+                    ..Default::default()
+                }
+                .into(),
+                Block::Code { code } => {
+                    let body = code
+                        .rich_text
+                        .iter()
+                        .map(rich_text_plain)
+                        .collect::<String>();
+                    let caption = if code.caption.is_empty() {
+                        None
+                    } else {
+                        Some(
+                            code.caption
+                                .iter()
+                                .map(rich_text_plain)
+                                .collect::<String>(),
+                        )
+                    };
+                    if matches!(code.language, Language::Mermaid) {
+                        Mermaid {
+                            id: id.clone(),
+                            code: body,
+                            ..Default::default()
+                        }
+                        .into()
+                    } else {
+                        CodeBlock {
+                            id: id.clone(),
+                            code: body,
+                            language: Some(code.language.to_string()),
+                            caption,
+                            ..Default::default()
+                        }
+                        .into()
+                    }
+                }
+                Block::Equation { equation } => katex(&id, equation),
+                Block::Image { image } => self.image(&id, image).await,
+                Block::File { file } => file_component(&id, file),
+                Block::Pdf { pdf } => file_component(&id, pdf),
+                Block::Audio { audio } => file_component(&id, audio),
+                Block::Video { video } => file_component(&id, video),
+                Block::Bookmark { bookmark } => self.bookmark(&id, bookmark, bag),
+                Block::Embed { embed } => Bookmark {
+                    id: id.clone(),
+                    url: embed.url.clone(),
+                    ..Default::default()
+                }
+                .into(),
+                Block::LinkPreview { link_preview } => Bookmark {
+                    id: id.clone(),
+                    url: link_preview.url.clone(),
+                    ..Default::default()
+                }
+                .into(),
+                Block::ChildPage { child_page } => Bookmark {
+                    id: id.clone(),
+                    url: notion_page_url(&id),
+                    title: Some(child_page.title.clone()),
+                    ..Default::default()
+                }
+                .into(),
+                Block::ChildDatabase { child_database } => Bookmark {
+                    id: id.clone(),
+                    url: notion_page_url(&id),
+                    title: Some(child_database.title.clone()),
+                    ..Default::default()
+                }
+                .into(),
+                Block::ColumnList { .. } => self.column_list(&id, notion.has_children, bag).await?,
+                Block::Column { column } => {
+                    let mut children = Vec::new();
+                    if notion.has_children {
+                        let (ids, comps) = self.convert_children(&id).await?;
+                        bag.extend(comps);
+                        children = ids;
+                    }
+                    Column {
+                        id: id.clone(),
+                        children: ChildList::from_ids(children),
+                        width_ratio: Some(column.width_ratio),
+                        ..Default::default()
+                    }
+                    .into()
+                }
+                Block::Table { table } => self.table(&id, table.has_column_header, table.has_row_header, bag).await?,
+                Block::SyncedBlock { .. } => {
+                    // Render the synced block transparently as a Column of its children.
+                    let mut children = Vec::new();
+                    if notion.has_children {
+                        let (ids, comps) = self.convert_children(&id).await?;
+                        bag.extend(comps);
+                        children = ids;
+                    }
+                    Column {
+                        id: id.clone(),
+                        children: ChildList::from_ids(children),
+                        ..Default::default()
+                    }
+                    .into()
+                }
+                other => {
+                    if !self.enable_unsupported_block {
+                        return Ok(None);
+                    }
+                    Unsupported {
+                        id: id.clone(),
+                        details: Some(unsupported_label(other)),
+                        ..Default::default()
+                    }
+                    .into()
+                }
+            };
+            bag.push(component);
+            Ok(Some(id))
+        })
+    }
+
+    // --- per-block handlers ------------------------------------------------
+
+    async fn paragraph(
+        &self,
+        id: &str,
+        block: &ParagraphBlock,
+        has_children: bool,
+        bag: &mut Vec<Component>,
+    ) -> Result<Component, Error> {
+        let (mut children, mut rt) =
+            rich_text::convert_rich_texts(id, "rich_text", &block.rich_text);
+        bag.append(&mut rt);
+        if has_children {
+            let (cs, comps) = self.convert_children(id).await?;
+            bag.extend(comps);
+            children.extend(cs);
+        }
+        Ok(Paragraph {
+            id: id.into(),
+            children: ChildList::from_ids(children),
+            color: paragraph_text_color(&block.color),
+            background_color: paragraph_background_color(&block.color),
+            ..Default::default()
+        }
+        .into())
+    }
+
+    fn heading(
+        &self,
+        id: &str,
+        level: HeadingLevel,
+        rich_text_items: &[NotionRichText],
+        bag: &mut Vec<Component>,
+    ) -> Component {
+        let (child_ids, mut rt) = rich_text::convert_rich_texts(id, "rich_text", rich_text_items);
+        bag.append(&mut rt);
+        Heading {
+            id: id.into(),
+            level,
+            children: ChildList::from_ids(child_ids),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    async fn quote(
+        &self,
+        id: &str,
+        block: &QuoteBlock,
+        has_children: bool,
+        bag: &mut Vec<Component>,
+    ) -> Result<Component, Error> {
+        let (mut children, mut rt) =
+            rich_text::convert_rich_texts(id, "rich_text", &block.rich_text);
+        bag.append(&mut rt);
+        if has_children {
+            let (cs, comps) = self.convert_children(id).await?;
+            bag.extend(comps);
+            children.extend(cs);
+        }
+        Ok(BlockQuote {
+            id: id.into(),
+            children: ChildList::from_ids(children),
+            ..Default::default()
+        }
+        .into())
+    }
+
+    async fn callout(
+        &self,
+        id: &str,
+        block: &CalloutBlock,
+        has_children: bool,
+        bag: &mut Vec<Component>,
+    ) -> Result<Component, Error> {
+        let (mut children, mut rt) =
+            rich_text::convert_rich_texts(id, "rich_text", &block.rich_text);
+        bag.append(&mut rt);
+        if has_children {
+            let (cs, comps) = self.convert_children(id).await?;
+            bag.extend(comps);
+            children.extend(cs);
+        }
+        Ok(Callout {
+            id: id.into(),
+            children: ChildList::from_ids(children),
+            callout_type: callout_type_from_icon(block.icon.as_ref()),
+            ..Default::default()
+        }
+        .into())
+    }
+
+    async fn toggle(
+        &self,
+        id: &str,
+        block: &ToggleBlock,
+        has_children: bool,
+        bag: &mut Vec<Component>,
+    ) -> Result<Component, Error> {
+        let (summary_ids, mut summary_rt) =
+            rich_text::convert_rich_texts(id, "summary", &block.rich_text);
+        bag.append(&mut summary_rt);
+        let mut children = Vec::new();
+        if has_children {
+            let (cs, comps) = self.convert_children(id).await?;
+            bag.extend(comps);
+            children = cs;
+        }
+        Ok(Toggle {
+            id: id.into(),
+            summary: ChildList::from_ids(summary_ids),
+            children: ChildList::from_ids(children),
+            ..Default::default()
+        }
+        .into())
+    }
+
+    async fn image(&self, id: &str, file: &NotionFile) -> Component {
+        let Some(src) = file_url(file) else {
+            return Unsupported {
+                id: id.into(),
+                details: Some("image:api_uploaded".into()),
+                ..Default::default()
+            }
+            .into();
+        };
+        let alt = file_name(file);
+        let caption = file_caption(file).map(|rts| rts.iter().map(rich_text_plain).collect());
+
+        let (width, height) = if self.enable_fetch_image_meta {
+            self.fetch_image_dimensions(&src).await
+        } else {
+            (None, None)
+        };
+
+        BlockImage {
+            id: id.into(),
+            src,
+            alt,
+            width,
+            height,
+            caption,
+            ..Default::default()
+        }
+        .into()
+    }
+
+    async fn fetch_image_dimensions(&self, url: &str) -> (Option<f64>, Option<f64>) {
+        let Ok(response) = self.reqwest.get(url).send().await else {
+            return (None, None);
+        };
+        let Ok(bytes) = response.bytes().await else {
+            return (None, None);
+        };
+        match imagesize::blob_size(&bytes) {
+            Ok(dim) => (Some(dim.width as f64), Some(dim.height as f64)),
+            Err(_) => (None, None),
+        }
+    }
+
+    fn bookmark(&self, id: &str, block: &BookmarkBlock, _bag: &mut [Component]) -> Component {
+        let caption = if block.caption.is_empty() {
+            None
+        } else {
+            Some(block.caption.iter().map(rich_text_plain).collect())
+        };
+        Bookmark {
+            id: id.into(),
+            url: block.url.clone(),
+            description: caption,
+            ..Default::default()
+        }
+        .into()
+    }
+
+    async fn column_list(
+        &self,
+        id: &str,
+        has_children: bool,
+        bag: &mut Vec<Component>,
+    ) -> Result<Component, Error> {
+        let mut children = Vec::new();
+        if has_children {
+            let (cs, comps) = self.convert_children(id).await?;
+            bag.extend(comps);
+            children = cs;
+        }
+        Ok(ColumnList {
+            id: id.into(),
+            children,
+            ..Default::default()
+        }
+        .into())
+    }
+
+    async fn table(
+        &self,
+        id: &str,
+        has_column_header: bool,
+        has_row_header: bool,
+        bag: &mut Vec<Component>,
+    ) -> Result<Component, Error> {
+        let rows = self.fetch_children(id).await?;
+        let mut body_ids = Vec::new();
+        let mut header_ids = Vec::new();
+        for (row_index, row) in rows.iter().enumerate() {
+            let Block::TableRow { table_row } = &row.block else {
+                continue;
+            };
+            let row_id = row.id.clone();
+            let cell_ids =
+                self.table_row_cells(&row_id, table_row, has_row_header, bag);
+            bag.push(
+                TableRow {
+                    id: row_id.clone(),
+                    children: cell_ids,
+                    ..Default::default()
+                }
+                .into(),
+            );
+            if has_column_header && row_index == 0 {
+                header_ids.push(row_id);
+            } else {
+                body_ids.push(row_id);
+            }
+        }
+        Ok(Table {
+            id: id.into(),
+            body: body_ids,
+            header: if header_ids.is_empty() {
+                None
+            } else {
+                Some(header_ids)
+            },
+            has_column_header: Some(has_column_header),
+            has_row_header: Some(has_row_header),
+            ..Default::default()
+        }
+        .into())
+    }
+
+    fn table_row_cells(
+        &self,
+        row_id: &str,
+        row: &TableRowBlock,
+        has_row_header: bool,
+        bag: &mut Vec<Component>,
+    ) -> Vec<ComponentId> {
+        let mut cell_ids = Vec::with_capacity(row.cells.len());
+        for (col_index, cell_runs) in row.cells.iter().enumerate() {
+            let cell_id = child_id(row_id, "cell", col_index);
+            let (rt_ids, mut rt) = rich_text::convert_rich_texts(&cell_id, "rich_text", cell_runs);
+            bag.append(&mut rt);
+            let is_header = has_row_header && col_index == 0;
+            bag.push(
+                TableCell {
+                    id: cell_id.clone(),
+                    children: rt_ids,
+                    is_header: if is_header { Some(true) } else { None },
+                    ..Default::default()
+                }
+                .into(),
+            );
+            cell_ids.push(cell_id);
+        }
+        cell_ids
+    }
+
+    async fn emit_list(
+        &self,
+        items: &[BlockResponse],
+        style: ListStyle,
+        bag: &mut Vec<Component>,
+    ) -> Result<ComponentId, Error> {
+        let list_id = list_group_id(&items[0].id);
+        let mut item_ids = Vec::with_capacity(items.len());
+        for item in items {
+            let item_id = self.emit_list_item(item, bag).await?;
+            item_ids.push(item_id);
+        }
+        bag.push(
+            List {
+                id: list_id.clone(),
+                children: item_ids,
+                style: Some(style),
+                ..Default::default()
+            }
+            .into(),
+        );
+        Ok(list_id)
+    }
+
+    async fn emit_list_item(
+        &self,
+        item: &BlockResponse,
+        bag: &mut Vec<Component>,
+    ) -> Result<ComponentId, Error> {
+        let id = item.id.clone();
+        let (rt_items, has_children, todo_mark) = match &item.block {
+            Block::BulletedListItem { bulleted_list_item: BulletedListItemBlock { rich_text, .. } } => {
+                (rich_text.as_slice(), item.has_children, None)
+            }
+            Block::NumberedListItem { numbered_list_item: NumberedListItemBlock { rich_text, .. } } => {
+                (rich_text.as_slice(), item.has_children, None)
+            }
+            Block::ToDo { to_do: ToDoBlock { rich_text, checked, .. } } => {
+                let mark = if *checked { "☑ " } else { "☐ " };
+                (rich_text.as_slice(), item.has_children, Some(mark))
+            }
+            _ => unreachable!("emit_list_item called on a non-list block"),
+        };
+
+        let mut children: Vec<ComponentId> = Vec::new();
+
+        if let Some(mark) = todo_mark {
+            let mark_id = child_id(&id, "todo_mark", 0);
+            bag.push(
+                RichText {
+                    id: mark_id.clone(),
+                    text: mark.into(),
+                    ..Default::default()
+                }
+                .into(),
+            );
+            children.push(mark_id);
+        }
+
+        let (rt_ids, mut rt) = rich_text::convert_rich_texts(&id, "rich_text", rt_items);
+        bag.append(&mut rt);
+        children.extend(rt_ids);
+
+        if has_children {
+            let (cs, comps) = self.convert_children(&id).await?;
+            bag.extend(comps);
+            children.extend(cs);
+        }
+
+        bag.push(
+            ListItem {
+                id: id.clone(),
+                children,
+                ..Default::default()
+            }
+            .into(),
+        );
+        Ok(id)
+    }
+}
+
+// --- free helpers ----------------------------------------------------------
+
+fn list_style(block: &Block) -> Option<ListStyle> {
+    match block {
+        Block::BulletedListItem { .. } | Block::ToDo { .. } => Some(ListStyle::Unordered),
+        Block::NumberedListItem { .. } => Some(ListStyle::Ordered),
+        _ => None,
+    }
+}
+
+fn list_group_id(first_item_id: &str) -> ComponentId {
+    format!("{first_item_id}::list")
+}
+
+fn rich_text_plain(rt: &NotionRichText) -> String {
+    match rt {
+        NotionRichText::Text { plain_text, .. }
+        | NotionRichText::Mention { plain_text, .. }
+        | NotionRichText::Equation { plain_text, .. } => plain_text.clone(),
+    }
+}
+
+fn katex(id: &str, block: &EquationBlock) -> Component {
+    Katex {
         id: id.into(),
-        level,
-        children: ChildList::from_ids(child_ids),
+        expression: block.expression.clone(),
         ..Default::default()
     }
     .into()
+}
+
+fn file_url(file: &NotionFile) -> Option<String> {
+    match file {
+        NotionFile::External(f) => Some(f.external.url.clone()),
+        NotionFile::NotionHosted(f) => Some(f.file.url.clone()),
+        _ => None,
+    }
+}
+
+fn file_name(file: &NotionFile) -> Option<String> {
+    match file {
+        NotionFile::External(f) => f.name.clone(),
+        NotionFile::NotionHosted(f) => f.name.clone(),
+        _ => None,
+    }
+}
+
+fn file_caption(file: &NotionFile) -> Option<&[NotionRichText]> {
+    match file {
+        NotionFile::External(f) => f.caption.as_deref(),
+        NotionFile::NotionHosted(f) => f.caption.as_deref(),
+        _ => None,
+    }
+}
+
+fn file_component(id: &str, file: &NotionFile) -> Component {
+    let Some(src) = file_url(file) else {
+        return Unsupported {
+            id: id.into(),
+            details: Some("file:api_uploaded".into()),
+            ..Default::default()
+        }
+        .into();
+    };
+    FileComponent {
+        id: id.into(),
+        src,
+        name: file_name(file),
+        ..Default::default()
+    }
+    .into()
+}
+
+fn notion_page_url(block_id: &str) -> String {
+    let stripped: String = block_id.chars().filter(|c| *c != '-').collect();
+    format!("https://www.notion.so/{stripped}")
+}
+
+/// Use the callout's emoji icon as a hint for the A2UI `CalloutType`.
+/// Notion doesn't model a discrete type — we map the common emojis used
+/// for callouts to the catalog's enum and fall back to `None` otherwise.
+fn callout_type_from_icon(icon: Option<&EmojiAndIcon>) -> Option<CalloutType> {
+    let EmojiAndIcon::Emoji(emoji) = icon? else {
+        return None;
+    };
+    match emoji.emoji.as_str() {
+        "ℹ️" | "📝" | "🗒️" | "💡" => Some(CalloutType::Note),
+        "✅" | "✔️" | "🟢" => Some(CalloutType::Tip),
+        "⭐" | "❗" | "📌" => Some(CalloutType::Important),
+        "⚠️" | "🚧" | "🟡" => Some(CalloutType::Warning),
+        "🛑" | "❌" | "🔴" | "☠️" => Some(CalloutType::Caution),
+        _ => None,
+    }
+}
+
+/// Notion paragraph color tokens like `"red"` map to text color;
+/// `"red_background"` maps to background color. Anything else is `None`.
+fn paragraph_text_color(color: &notionrs::types::prelude::Color) -> Option<String> {
+    use notionrs::types::prelude::Color::*;
+    match color {
+        Blue | Brown | Gray | Green | Orange | Pink | Purple | Red | Yellow => {
+            Some(color.to_string())
+        }
+        _ => None,
+    }
+}
+
+fn paragraph_background_color(color: &notionrs::types::prelude::Color) -> Option<String> {
+    use notionrs::types::prelude::Color::*;
+    match color {
+        BlueBackground | BrownBackground | GrayBackground | GreenBackground | OrangeBackground
+        | PinkBackground | PurpleBackground | RedBackground | YellowBackground => {
+            Some(color.to_string())
+        }
+        _ => None,
+    }
 }
 
 #[allow(deprecated)]
@@ -124,3 +756,4 @@ fn unsupported_label(block: &Block) -> String {
         Block::Unsupported { unsupported } => format!("unsupported:{}", unsupported.block_type),
     }
 }
+

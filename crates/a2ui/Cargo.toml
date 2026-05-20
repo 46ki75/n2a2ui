@@ -1,0 +1,15 @@
+[package]
+name = "a2ui"
+version = "0.1.0"
+description = "Rust types for the A2UI v0.9 Elmethis Block Catalog."
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+categories = ["data-structures", "web-programming"]
+keywords = ["a2ui", "ui", "schema"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+indexmap = { workspace = true }

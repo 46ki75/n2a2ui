@@ -1,0 +1,7 @@
+/target
+
+.env
+
+.vscode/mcp.json
+
+test.json

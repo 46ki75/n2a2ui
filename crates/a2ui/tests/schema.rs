@@ -183,6 +183,59 @@ fn content_tab_uses_child_list_label_and_content() {
 }
 
 #[test]
+fn data_binding_rejects_unknown_fields() {
+    // Schema: $defs/DataBinding has `additionalProperties: false`
+    // (block_catalog.json:1048). Today this passes because the Rust struct
+    // lacks `#[serde(deny_unknown_fields)]`.
+    let json = serde_json::json!({ "path": "/x", "extra": "junk" });
+    let result: Result<DataBinding, _> = serde_json::from_value(json);
+    assert!(
+        result.is_err(),
+        "DataBinding must reject unknown fields per schema additionalProperties: false; \
+         got Ok({:?})",
+        result.unwrap()
+    );
+}
+
+#[test]
+fn child_list_template_rejects_unknown_fields() {
+    // Schema: $defs/ChildList → Template variant has `additionalProperties: false`
+    // (block_catalog.json:1033). Today this passes because the Rust struct
+    // lacks `#[serde(deny_unknown_fields)]`.
+    let json = serde_json::json!({ "componentId": "x", "path": "/y", "extra": "junk" });
+    let result: Result<ChildListTemplate, _> = serde_json::from_value(json);
+    assert!(
+        result.is_err(),
+        "ChildListTemplate must reject unknown fields per schema additionalProperties: false; \
+         got Ok({:?})",
+        result.unwrap()
+    );
+}
+
+#[test]
+fn dynamic_string_with_call_field_must_parse_as_call_not_binding() {
+    // Per the v0.9 schema, DataBinding has `additionalProperties: false`, so
+    // {"path": "/x", "call": "trim"} is NOT a valid DataBinding — it must
+    // parse as the FunctionCall arm of DynamicString (FunctionCall allows
+    // extra props per the schema).
+    //
+    // Today this misparses as `Binding` because the untagged enum tries
+    // `Binding` first and DataBinding silently accepts (and drops) the
+    // `call` field — real data loss on the wire.
+    let json = serde_json::json!({ "path": "/x", "call": "trim" });
+    let parsed: DynamicString = serde_json::from_value(json).unwrap();
+    match parsed {
+        DynamicString::Call(fc) => {
+            assert_eq!(fc.call, "trim");
+        }
+        DynamicString::Binding(b) => panic!(
+            "expected Call but got Binding({b:?}); the `call` field was silently dropped"
+        ),
+        other => panic!("expected Call, got {other:?}"),
+    }
+}
+
+#[test]
 fn dynamic_string_round_trips_literal_binding_and_call() {
     let literal: DynamicString = "hello".into();
     let binding = DynamicString::Binding(DataBinding {

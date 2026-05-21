@@ -29,6 +29,9 @@ use crate::id::child_id;
 
 pub mod rich_text;
 
+#[cfg(test)]
+mod tests;
+
 /// Stateful Notion → A2UI converter. Holds the network clients so
 /// per-block handlers can recurse into children and (optionally) probe
 /// image dimensions.
@@ -105,22 +108,17 @@ impl<'a> Converter<'a> {
     ) -> BoxFuture<'b, Result<Vec<ComponentId>, Error>> {
         Box::pin(async move {
             let mut ids = Vec::new();
-            let mut i = 0;
-            while i < blocks.len() {
-                let style = list_style(&blocks[i].block);
-                if let Some(style) = style {
-                    let mut j = i + 1;
-                    while j < blocks.len() && list_style(&blocks[j].block) == Some(style) {
-                        j += 1;
+            for group in top_level_groups(blocks) {
+                match group {
+                    SiblingGroup::List { range, style } => {
+                        let list_id = self.emit_list(&blocks[range], style, bag).await?;
+                        ids.push(list_id);
                     }
-                    let list_id = self.emit_list(&blocks[i..j], style, bag).await?;
-                    ids.push(list_id);
-                    i = j;
-                } else if let Some(id) = self.convert_block(&blocks[i], bag).await? {
-                    ids.push(id);
-                    i += 1;
-                } else {
-                    i += 1;
+                    SiblingGroup::Single { index } => {
+                        if let Some(id) = self.convert_block(&blocks[index], bag).await? {
+                            ids.push(id);
+                        }
+                    }
                 }
             }
             Ok(ids)
@@ -198,7 +196,7 @@ impl<'a> Converter<'a> {
                 Block::Pdf { pdf } => file_component(&id, pdf),
                 Block::Audio { audio } => file_component(&id, audio),
                 Block::Video { video } => file_component(&id, video),
-                Block::Bookmark { bookmark } => self.bookmark(&id, bookmark, bag),
+                Block::Bookmark { bookmark } => self.bookmark(&id, bookmark),
                 Block::Embed { embed } => Bookmark {
                     id: id.clone(),
                     url: embed.url.clone(),
@@ -446,16 +444,14 @@ impl<'a> Converter<'a> {
         }
     }
 
-    fn bookmark(&self, id: &str, block: &BookmarkBlock, _bag: &mut [Component]) -> Component {
-        let caption = if block.caption.is_empty() {
-            None
-        } else {
-            Some(block.caption.iter().map(rich_text_plain).collect())
-        };
+    fn bookmark(&self, id: &str, block: &BookmarkBlock) -> Component {
+        // A2UI `Bookmark.description` is reserved for the OG `meta
+        // description`. Notion's `caption` is user-authored text and is
+        // semantically distinct, so we deliberately do not populate
+        // `description` from it. OG enrichment is a separate concern.
         Bookmark {
             id: id.into(),
             url: block.url.clone(),
-            description: caption,
             ..Default::default()
         }
         .into()
@@ -489,13 +485,42 @@ impl<'a> Converter<'a> {
         bag: &mut Vec<Component>,
     ) -> Result<Component, Error> {
         let rows = self.fetch_children(id).await?;
-        let mut body_ids = Vec::new();
+        let (header_ids, body_ids) =
+            self.classify_table_rows(&rows, has_column_header, has_row_header, bag);
+        Ok(Table {
+            id: id.into(),
+            body: body_ids,
+            header: if header_ids.is_empty() {
+                None
+            } else {
+                Some(header_ids)
+            },
+            has_column_header: Some(has_column_header),
+            has_row_header: Some(has_row_header),
+            ..Default::default()
+        }
+        .into())
+    }
+
+    /// Classify pre-fetched table children into `(header_ids, body_ids)`,
+    /// pushing the synthesized `TableRow` / `TableCell` components into
+    /// `bag`. Non-`TableRow` children are filtered out *before*
+    /// enumeration so the column-header row stays at index 0 even when
+    /// `fetch_children` yields stray non-row siblings.
+    pub(crate) fn classify_table_rows(
+        &self,
+        rows: &[BlockResponse],
+        has_column_header: bool,
+        has_row_header: bool,
+        bag: &mut Vec<Component>,
+    ) -> (Vec<ComponentId>, Vec<ComponentId>) {
+        let table_rows = rows.iter().filter_map(|row| match &row.block {
+            Block::TableRow { table_row } => Some((row.id.clone(), table_row)),
+            _ => None,
+        });
         let mut header_ids = Vec::new();
-        for (row_index, row) in rows.iter().enumerate() {
-            let Block::TableRow { table_row } = &row.block else {
-                continue;
-            };
-            let row_id = row.id.clone();
+        let mut body_ids = Vec::new();
+        for (row_index, (row_id, table_row)) in table_rows.enumerate() {
             let cell_ids = self.table_row_cells(&row_id, table_row, has_row_header, bag);
             bag.push(
                 TableRow {
@@ -511,19 +536,7 @@ impl<'a> Converter<'a> {
                 body_ids.push(row_id);
             }
         }
-        Ok(Table {
-            id: id.into(),
-            body: body_ids,
-            header: if header_ids.is_empty() {
-                None
-            } else {
-                Some(header_ids)
-            },
-            has_column_header: Some(has_column_header),
-            has_row_header: Some(has_row_header),
-            ..Default::default()
-        }
-        .into())
+        (header_ids, body_ids)
     }
 
     fn table_row_cells(
@@ -689,6 +702,35 @@ impl<'a> Converter<'a> {
 }
 
 // --- free helpers ----------------------------------------------------------
+
+/// One top-level sibling group from a `&[BlockResponse]`: either a
+/// single non-list block, or a consecutive run of list items of one
+/// style. Used by both the eager `convert_siblings` walk and the
+/// streaming orchestrator so the two paths cannot drift on chunk
+/// boundaries.
+pub(crate) enum SiblingGroup {
+    Single { index: usize },
+    List { range: std::ops::Range<usize>, style: ListStyle },
+}
+
+pub(crate) fn top_level_groups(blocks: &[BlockResponse]) -> Vec<SiblingGroup> {
+    let mut groups = Vec::new();
+    let mut i = 0;
+    while i < blocks.len() {
+        if let Some(style) = list_style(&blocks[i].block) {
+            let mut j = i + 1;
+            while j < blocks.len() && list_style(&blocks[j].block) == Some(style) {
+                j += 1;
+            }
+            groups.push(SiblingGroup::List { range: i..j, style });
+            i = j;
+        } else {
+            groups.push(SiblingGroup::Single { index: i });
+            i += 1;
+        }
+    }
+    groups
+}
 
 pub(crate) fn list_style(block: &Block) -> Option<ListStyle> {
     match block {

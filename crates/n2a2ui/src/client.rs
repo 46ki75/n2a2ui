@@ -5,7 +5,7 @@ use a2ui::v0_9::{
 use async_stream::try_stream;
 use futures::{Stream, TryStreamExt};
 
-use crate::convert::{Converter, list_style};
+use crate::convert::{Converter, SiblingGroup, top_level_groups};
 use crate::error::Error;
 use crate::id::ROOT_ID;
 
@@ -100,22 +100,16 @@ impl Client {
                 components: vec![root_column(&accumulated)],
             });
 
-            let mut i = 0;
-            while i < blocks.len() {
-                let chunk: Option<(ComponentId, Vec<Component>)> = if let Some(style) = list_style(&blocks[i].block) {
-                    let mut j = i + 1;
-                    while j < blocks.len() && list_style(&blocks[j].block) == Some(style) {
-                        j += 1;
+            for group in top_level_groups(&blocks) {
+                let chunk: Option<(ComponentId, Vec<Component>)> = match group {
+                    SiblingGroup::List { range, style } => Some(
+                        converter
+                            .convert_list_group_to_chunk(&blocks[range], style)
+                            .await?,
+                    ),
+                    SiblingGroup::Single { index } => {
+                        converter.convert_single_block_to_chunk(&blocks[index]).await?
                     }
-                    let result = converter
-                        .convert_list_group_to_chunk(&blocks[i..j], style)
-                        .await?;
-                    i = j;
-                    Some(result)
-                } else {
-                    let result = converter.convert_single_block_to_chunk(&blocks[i]).await?;
-                    i += 1;
-                    result
                 };
 
                 if let Some((chunk_id, mut components)) = chunk {

@@ -1,0 +1,38 @@
+name: CI (live)
+
+# Live integration tests hit the real Notion API. Runs only on manual
+# dispatch or schedule, behind a GitHub Actions environment with
+# required reviewers and environment-scoped secrets. Failures here MUST
+# NOT block PR merges — they fail for reasons unrelated to the diff.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Sunday 03:00 UTC. Catch regressions in upstream Notion API
+    # contract without burning quota daily.
+    - cron: "0 3 * * 0"
+
+jobs:
+  ci-live:
+    name: CI (live, approval required)
+    runs-on: ubuntu-latest
+    environment: live-tests
+    env:
+      NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+      BLOCK_ID: ${{ secrets.BLOCK_ID }}
+    steps:
+      - name: Clone Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: just ci-live
+        run: just ci-live

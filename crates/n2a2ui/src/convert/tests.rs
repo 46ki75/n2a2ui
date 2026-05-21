@@ -151,7 +151,7 @@ async fn bug4_bookmark_caption_should_not_be_set_as_description() {
     let (id, components) = converter
         .convert_single_block_to_chunk(&bm)
         .await
-        .unwrap()
+        .expect("convert_single_block_to_chunk must succeed")
         .expect("bookmark must produce a chunk");
 
     assert_eq!(id, "bk-1");

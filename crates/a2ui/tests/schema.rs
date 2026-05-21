@@ -32,8 +32,8 @@ fn component_round_trip() {
     .into();
 
     for component in [para, rich] {
-        let json = serde_json::to_string(&component).unwrap();
-        let parsed: Component = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&component).expect("serialize component");
+        let parsed: Component = serde_json::from_str(&json).expect("deserialize component");
         assert_eq!(component, parsed);
     }
 }
@@ -66,12 +66,26 @@ fn surface_round_trip_preserves_order() {
         .into(),
     );
 
-    let json = serde_json::to_string(&surface).unwrap();
-    let parsed: Surface = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&surface).expect("serialize surface");
+    let parsed: Surface = serde_json::from_str(&json).expect("deserialize surface");
     assert_eq!(surface, parsed);
     assert_eq!(parsed.components.len(), 3);
-    assert_eq!(parsed.components.get_index(0).unwrap().0, "root");
-    assert_eq!(parsed.components.get_index(2).unwrap().0, "t1");
+    assert_eq!(
+        parsed
+            .components
+            .get_index(0)
+            .expect("index 0 must exist")
+            .0,
+        "root"
+    );
+    assert_eq!(
+        parsed
+            .components
+            .get_index(2)
+            .expect("index 2 must exist")
+            .0,
+        "t1"
+    );
 }
 
 #[test]
@@ -83,10 +97,10 @@ fn callout_type_field_serializes_as_type() {
         ..Default::default()
     }
     .into();
-    let json = serde_json::to_string(&callout).unwrap();
+    let json = serde_json::to_string(&callout).expect("serialize callout");
     assert!(json.contains("\"type\":\"warning\""));
     assert!(!json.contains("calloutType"));
-    let parsed: Component = serde_json::from_str(&json).unwrap();
+    let parsed: Component = serde_json::from_str(&json).expect("deserialize callout");
     assert_eq!(callout, parsed);
 }
 
@@ -99,7 +113,7 @@ fn heading_level_serializes_as_number() {
         ..Default::default()
     }
     .into();
-    let json = serde_json::to_string(&h2).unwrap();
+    let json = serde_json::to_string(&h2).expect("serialize heading");
     assert!(json.contains("\"level\":2"));
 }
 
@@ -151,12 +165,12 @@ fn message_envelope_wire_shape_round_trips() {
         theme: None,
         send_data_model: Some(true),
     });
-    let json = serde_json::to_value(&msg).unwrap();
+    let json = serde_json::to_value(&msg).expect("serialize message");
     assert_eq!(json["version"], "v0.9");
     assert_eq!(json["createSurface"]["surfaceId"], "s1");
     assert_eq!(json["createSurface"]["sendDataModel"], true);
 
-    let parsed: Message = serde_json::from_value(json).unwrap();
+    let parsed: Message = serde_json::from_value(json).expect("deserialize message");
     assert_eq!(parsed, msg);
 }
 
@@ -169,7 +183,7 @@ fn content_tab_uses_child_list_label_and_content() {
         ..Default::default()
     }
     .into();
-    let json = serde_json::to_value(&tab).unwrap();
+    let json = serde_json::to_value(&tab).expect("serialize tab");
     assert_eq!(json["component"], "ContentTab");
     assert_eq!(json["label"][0], "tab1_label_rt");
     assert_eq!(json["content"][0], "tab1_para");
@@ -178,7 +192,7 @@ fn content_tab_uses_child_list_label_and_content() {
         "old labels/contents fields must be gone"
     );
 
-    let parsed: Component = serde_json::from_value(json).unwrap();
+    let parsed: Component = serde_json::from_value(json).expect("deserialize tab");
     assert_eq!(parsed, tab);
 }
 
@@ -193,7 +207,7 @@ fn data_binding_rejects_unknown_fields() {
         result.is_err(),
         "DataBinding must reject unknown fields per schema additionalProperties: false; \
          got Ok({:?})",
-        result.unwrap()
+        result.expect("checked is_err above")
     );
 }
 
@@ -208,7 +222,7 @@ fn child_list_template_rejects_unknown_fields() {
         result.is_err(),
         "ChildListTemplate must reject unknown fields per schema additionalProperties: false; \
          got Ok({:?})",
-        result.unwrap()
+        result.expect("checked is_err above")
     );
 }
 
@@ -223,14 +237,14 @@ fn dynamic_string_with_call_field_must_parse_as_call_not_binding() {
     // `Binding` first and DataBinding silently accepts (and drops) the
     // `call` field — real data loss on the wire.
     let json = serde_json::json!({ "path": "/x", "call": "trim" });
-    let parsed: DynamicString = serde_json::from_value(json).unwrap();
+    let parsed: DynamicString = serde_json::from_value(json).expect("deserialize dynamic string");
     match parsed {
         DynamicString::Call(fc) => {
             assert_eq!(fc.call, "trim");
         }
-        DynamicString::Binding(b) => panic!(
-            "expected Call but got Binding({b:?}); the `call` field was silently dropped"
-        ),
+        DynamicString::Binding(b) => {
+            panic!("expected Call but got Binding({b:?}); the `call` field was silently dropped")
+        }
         other => panic!("expected Call, got {other:?}"),
     }
 }
@@ -248,8 +262,9 @@ fn dynamic_string_round_trips_literal_binding_and_call() {
     });
 
     for ds in [literal, binding, call] {
-        let json = serde_json::to_string(&ds).unwrap();
-        let parsed: DynamicString = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&ds).expect("serialize dynamic string");
+        let parsed: DynamicString =
+            serde_json::from_str(&json).expect("deserialize dynamic string");
         assert_eq!(ds, parsed);
     }
 }

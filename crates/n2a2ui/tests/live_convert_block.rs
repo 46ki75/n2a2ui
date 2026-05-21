@@ -1,39 +1,34 @@
-//! Integration test that exercises `Client::convert_block` against the
-//! live Notion API.
+//! Live integration test that exercises `Client::convert_block` against
+//! the real Notion API.
 //!
-//! Reads `NOTION_API_KEY` and `BLOCK_ID` from the environment (or from a
-//! `.env` file at the workspace root via `dotenvy`). When either is
-//! absent the test is skipped silently, so `cargo test` stays a no-op
-//! for contributors without credentials and CI (which runs `--lib` only)
-//! is unaffected.
-//!
-//! Run with output:
-//!     cargo test -p n2a2ui --test convert_block -- --nocapture
+//! Gated with `#[ignore]` so default `cargo test` skips it. Opt in with
+//! `cargo test -- --ignored` (or `just test-live`). Reads `NOTION_API_KEY`
+//! and `BLOCK_ID` from the environment or a `.env` at the workspace root
+//! via `dotenvy`; both must be set.
 
 use a2ui::v0_9::{Component, MessageBody};
 use futures::TryStreamExt;
 use n2a2ui::client::Client;
 use n2a2ui::id::ROOT_ID;
 
-fn make_client() -> Option<(Client, String)> {
+fn make_client() -> (Client, String) {
     let _ = dotenvy::from_path("../../.env");
-    let notion_api_key = std::env::var("NOTION_API_KEY").ok()?;
-    let block_id = std::env::var("BLOCK_ID").ok()?;
+    let notion_api_key =
+        std::env::var("NOTION_API_KEY").expect("NOTION_API_KEY must be set for live tests");
+    let block_id = std::env::var("BLOCK_ID").expect("BLOCK_ID must be set for live tests");
     let client = Client {
         notionrs_client: notionrs::client::Client::new(notion_api_key),
         reqwest_client: reqwest::Client::new(),
         enable_unsupported_block: true,
         enable_fetch_image_meta: false,
     };
-    Some((client, block_id))
+    (client, block_id)
 }
 
 #[tokio::test]
+#[ignore = "live: hits Notion API, requires NOTION_API_KEY + BLOCK_ID"]
 async fn convert_block_against_live_notion() {
-    let Some((client, block_id)) = make_client() else {
-        eprintln!("skipping: NOTION_API_KEY or BLOCK_ID not set");
-        return;
-    };
+    let (client, block_id) = make_client();
 
     let surface = client
         .convert_block(&block_id)
@@ -88,15 +83,17 @@ async fn convert_block_against_live_notion() {
     }
     let pretty = serde_json::to_string_pretty(&messages).expect("serialize messages");
     std::fs::write(out_path, pretty).expect("write messages JSON");
-    println!("wrote {} messages to {}", messages.len(), out_path.display());
+    println!(
+        "wrote {} messages to {}",
+        messages.len(),
+        out_path.display()
+    );
 }
 
 #[tokio::test]
+#[ignore = "live: hits Notion API, requires NOTION_API_KEY + BLOCK_ID"]
 async fn stream_yields_growing_root() {
-    let Some((client, block_id)) = make_client() else {
-        eprintln!("skipping: NOTION_API_KEY or BLOCK_ID not set");
-        return;
-    };
+    let (client, block_id) = make_client();
 
     let streamed: Vec<_> = client
         .convert_block_stream(&block_id, "notion-page")

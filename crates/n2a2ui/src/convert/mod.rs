@@ -709,8 +709,13 @@ impl<'a> Converter<'a> {
 /// streaming orchestrator so the two paths cannot drift on chunk
 /// boundaries.
 pub(crate) enum SiblingGroup {
-    Single { index: usize },
-    List { range: std::ops::Range<usize>, style: ListStyle },
+    Single {
+        index: usize,
+    },
+    List {
+        range: std::ops::Range<usize>,
+        style: ListStyle,
+    },
 }
 
 pub(crate) fn top_level_groups(blocks: &[BlockResponse]) -> Vec<SiblingGroup> {

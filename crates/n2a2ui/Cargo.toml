@@ -18,7 +18,7 @@ workspace = true
 a2ui = { path = "../a2ui", version = "0.1" }
 async-stream = { workspace = true }
 futures = "0.3.32"
-html-meta-scraper = "^0.2"
+html-meta-scraper = "^0.3"
 imagesize = "0.14"
 indexmap = { workspace = true }
 infer = "0.19.0"

@@ -6,10 +6,10 @@
 //! and `BLOCK_ID` from the environment or a `.env` at the workspace root
 //! via `dotenvy`; both must be set.
 
-use n2a2ui_a2ui::v0_9::{Component, MessageBody};
 use futures::TryStreamExt;
 use n2a2ui::client::Client;
 use n2a2ui::id::ROOT_ID;
+use n2a2ui_a2ui::v0_9::{Component, MessageBody};
 
 fn make_client() -> (Client, String) {
     let _ = dotenvy::from_path("../../.env");

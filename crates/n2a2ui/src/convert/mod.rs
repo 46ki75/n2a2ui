@@ -9,14 +9,14 @@
 //! blocks collapse into a single `List` so the wire output matches the
 //! A2UI block model rather than Notion's flat sibling layout.
 
+use futures::TryStreamExt;
+use futures::future::BoxFuture;
 use n2a2ui_a2ui::v0_9::{
     BlockImage, BlockQuote, Bookmark, Callout, CalloutType, ChildList, CodeBlock, Column,
     ColumnList, Component, ComponentId, ContentTab, ContentTabs, Divider, File as FileComponent,
     Heading, HeadingLevel, Icon, Katex, List, ListItem, ListStyle, Mermaid, Paragraph, RichText,
     Table, TableCell, TableRow, Toggle, Unsupported,
 };
-use futures::TryStreamExt;
-use futures::future::BoxFuture;
 use notionrs::PaginateExt;
 use notionrs::types::prelude::{
     Block, BlockResponse, BookmarkBlock, BulletedListItemBlock, CalloutBlock, EmojiAndIcon,

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cargo workspace (edition 2024, resolver 3) with two member crates:
 
-- `crates/a2ui` — Rust types for the [A2UI](https://a2ui.dev) v0.9 Elmethis Block Catalog. Pure data model; no I/O. The wire schema is vendored at `crates/a2ui/schemas/v0_9/block_catalog.json`.
+- `crates/n2a2ui-a2ui` — Rust types for the [A2UI](https://a2ui.dev) v0.9 Elmethis Block Catalog. Pure data model; no I/O. The wire schema is vendored at `crates/n2a2ui-a2ui/schemas/v0_9/block_catalog.json`.
 - `crates/n2a2ui` — converter that walks a Notion block tree (via `notionrs`) and emits an A2UI `Surface` (or the v0.9 message sequence that renders it).
 
 ## Commands
@@ -22,11 +22,11 @@ cargo test
 cargo test --lib
 
 # Run one crate's tests
-cargo test -p a2ui
+cargo test -p n2a2ui-a2ui
 cargo test -p n2a2ui
 
 # Run a single test by name
-cargo test -p a2ui surface_round_trip_preserves_order
+cargo test -p n2a2ui-a2ui surface_round_trip_preserves_order
 
 # Live integration test (skipped without env vars; .env at workspace root works)
 NOTION_API_KEY=... BLOCK_ID=... \
@@ -37,11 +37,11 @@ cargo clippy --all-targets
 cargo fmt
 ```
 
-Note: `crates/a2ui/tests/schema.rs` `include_str!`s the vendored catalog and asserts its `$id` matches `a2ui::v0_9::BLOCK_CATALOG_ID` — if you bump the catalog version, both the URL constant and the vendored file must move together or that test fails.
+Note: `crates/n2a2ui-a2ui/tests/schema.rs` `include_str!`s the vendored catalog and asserts its `$id` matches `n2a2ui_a2ui::v0_9::BLOCK_CATALOG_ID` — if you bump the catalog version, both the URL constant and the vendored file must move together or that test fails.
 
 ## Architecture
 
-### A2UI surface model (`a2ui::v0_9`)
+### A2UI surface model (`n2a2ui_a2ui::v0_9`)
 
 A `Surface` is `{ root: ComponentId, components: IndexMap<ComponentId, Component> }` — a flat adjacency list. Parents reference children by id; the `IndexMap` preserves insertion order across serde round-trips (asserted in tests). Use `Surface::insert(component)` rather than touching the map directly — it keys by `component.id()`.
 
@@ -55,7 +55,7 @@ A `Surface` is `{ root: ComponentId, components: IndexMap<ComponentId, Component
 
 Adding a new component variant requires four edits in lockstep: define the struct in `block_catalog.rs`, add it to the `Component` enum, add it to the `component_impls!` macro list (this generates `From<T>` and `Component::id()`), and add a round-trip test in `tests/schema.rs`.
 
-### v0.9 message envelope (`a2ui::v0_9::message`)
+### v0.9 message envelope (`n2a2ui_a2ui::v0_9::message`)
 
 `Message { version, #[serde(flatten)] body: MessageBody }` serializes as `{"version":"v0.9","createSurface":{...}}` — the v0.9 wire shape uses the body key as the discriminator (externally-tagged enum, camelCase). Body variants: `CreateSurface`, `UpdateComponents`, `UpdateDataModel`, `DeleteSurface`. `Surface::to_messages(surface_id, catalog_id)` emits the canonical `[createSurface, updateComponents]` pair that renders the whole surface in one round-trip.
 
@@ -87,5 +87,5 @@ Conversion lives in `src/convert/`. The eager `Converter::convert_children` walk
 
 - PRs target `develop` or `release/*`, not `main` (see `.github/pull_request_template.md`).
 - Workspace deps (`serde`, `serde_json`, `indexmap`, `async-stream`) are declared once in the root `Cargo.toml` and pulled into members via `{ workspace = true }` — add new shared deps there, not per-crate.
-- The `a2ui` crate must stay I/O-free (no `reqwest`, `tokio`, etc.) — it's the pure schema crate consumed by the converter and potentially other producers.
-- When changing a component's schema in `crates/a2ui`, mirror the same change in the upstream TypeScript catalog at `/home/ikuma/org/46ki75/elmethis/packages/core/src/a2ui/v0_9/block-catalog.ts` (and the matching Qwik renderer/story/spec under `packages/qwik/src/components/a2ui/catalog/`). The Rust schema is a vendored mirror of that source of truth.
+- The `n2a2ui-a2ui` crate must stay I/O-free (no `reqwest`, `tokio`, etc.) — it's the pure schema crate consumed by the converter and potentially other producers.
+- When changing a component's schema in `crates/n2a2ui-a2ui`, mirror the same change in the upstream TypeScript catalog at `/home/ikuma/org/46ki75/elmethis/packages/core/src/a2ui/v0_9/block-catalog.ts` (and the matching Qwik renderer/story/spec under `packages/qwik/src/components/a2ui/catalog/`). The Rust schema is a vendored mirror of that source of truth.

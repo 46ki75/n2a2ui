@@ -6,7 +6,7 @@
 //! every block has `has_children = false`, so `fetch_children` is never
 //! invoked.
 
-use a2ui::v0_9::{ChildList, Column, Component, ComponentId, Surface, UpdateComponents};
+use n2a2ui_a2ui::v0_9::{ChildList, Column, Component, ComponentId, Surface, UpdateComponents};
 use notionrs::types::prelude::BlockResponse;
 
 use super::{Converter, SiblingGroup, top_level_groups};

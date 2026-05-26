@@ -6,7 +6,7 @@ as the component vocabulary.
 
 This workspace contains two crates:
 
-- [`a2ui`](./crates/a2ui) — Rust types for the A2UI v0.9 Elmethis Block
+- [`n2a2ui-a2ui`](./crates/n2a2ui-a2ui) — Rust types for the A2UI v0.9 Elmethis Block
   Catalog (components, surface envelope, v0.9 message envelope,
   dynamic-value helpers). Pure data model, no I/O.
 - [`n2a2ui`](./crates/n2a2ui) — the converter; walks a
@@ -111,7 +111,7 @@ source with the `Katex` decoration.
 
 ## Tests
 
-`cargo test` runs the schema round-trip tests in `crates/a2ui` plus a
+`cargo test` runs the schema round-trip tests in `crates/n2a2ui-a2ui` plus a
 live integration test in `crates/n2a2ui/tests/convert_block.rs`.
 The integration test reads `NOTION_API_KEY` and `BLOCK_ID` from the
 environment (or a `.env` at the workspace root) and skips silently when

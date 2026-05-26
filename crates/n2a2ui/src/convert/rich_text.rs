@@ -7,7 +7,7 @@
 //! `RichText` with the `Katex` decoration carrying the LaTeX source
 //! as their text.
 
-use a2ui::v0_9::{Component, ComponentId, Decoration, Icon, LinkText, RichText};
+use n2a2ui_a2ui::v0_9::{Component, ComponentId, Decoration, Icon, LinkText, RichText};
 use notionrs::types::prelude::{Color, Mention, RichText as NotionRichText, RichTextAnnotations};
 
 use crate::id::child_id;

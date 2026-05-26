@@ -6,7 +6,7 @@
 //! and `BLOCK_ID` from the environment or a `.env` at the workspace root
 //! via `dotenvy`; both must be set.
 
-use a2ui::v0_9::{Component, MessageBody};
+use n2a2ui_a2ui::v0_9::{Component, MessageBody};
 use futures::TryStreamExt;
 use n2a2ui::client::Client;
 use n2a2ui::id::ROOT_ID;
@@ -130,7 +130,7 @@ async fn stream_yields_growing_root() {
             panic!("root component should be a Column");
         };
         let n = match &col.children {
-            a2ui::v0_9::ChildList::Static(ids) => ids.len(),
+            n2a2ui_a2ui::v0_9::ChildList::Static(ids) => ids.len(),
             other => panic!("root.children must be Static, got {other:?}"),
         };
         assert!(

@@ -1,6 +1,6 @@
 //! Sanity tests for the vendored A2UI v0.9 block catalog.
 
-use a2ui::v0_9::*;
+use n2a2ui_a2ui::v0_9::*;
 
 const BLOCK_CATALOG_JSON: &str = include_str!("../schemas/v0_9/block_catalog.json");
 

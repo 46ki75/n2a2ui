@@ -1,4 +1,4 @@
-use a2ui::v0_9::{
+use n2a2ui_a2ui::v0_9::{
     BLOCK_CATALOG_ID, ChildList, Column, Component, ComponentId, CreateSurface, Message, Surface,
     UpdateComponents,
 };

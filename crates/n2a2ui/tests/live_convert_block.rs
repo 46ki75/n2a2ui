@@ -21,6 +21,7 @@ fn make_client() -> (Client, String) {
         reqwest_client: reqwest::Client::new(),
         enable_unsupported_block: true,
         enable_fetch_image_meta: false,
+        enable_fetch_bookmark_meta: false,
     };
     (client, block_id)
 }

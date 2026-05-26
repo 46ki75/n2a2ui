@@ -19,8 +19,8 @@ use n2a2ui_a2ui::v0_9::{
 };
 use notionrs::PaginateExt;
 use notionrs::types::prelude::{
-    Block, BlockResponse, BookmarkBlock, BulletedListItemBlock, CalloutBlock, EmojiAndIcon,
-    EquationBlock, File as NotionFile, Language, NumberedListItemBlock, ParagraphBlock, QuoteBlock,
+    Block, BlockResponse, BulletedListItemBlock, CalloutBlock, EmojiAndIcon, EquationBlock,
+    File as NotionFile, Language, NumberedListItemBlock, ParagraphBlock, QuoteBlock,
     RichText as NotionRichText, TableRowBlock, ToDoBlock, ToggleBlock,
 };
 
@@ -41,6 +41,7 @@ pub(crate) struct Converter<'a> {
     pub reqwest: &'a reqwest::Client,
     pub enable_unsupported_block: bool,
     pub enable_fetch_image_meta: bool,
+    pub enable_fetch_bookmark_meta: bool,
 }
 
 impl<'a> Converter<'a> {
@@ -197,19 +198,11 @@ impl<'a> Converter<'a> {
                 Block::Pdf { pdf } => file_component(&id, pdf),
                 Block::Audio { audio } => file_component(&id, audio),
                 Block::Video { video } => file_component(&id, video),
-                Block::Bookmark { bookmark } => self.bookmark(&id, bookmark),
-                Block::Embed { embed } => Bookmark {
-                    id: id.clone(),
-                    url: embed.url.clone(),
-                    ..Default::default()
+                Block::Bookmark { bookmark } => self.bookmark_from_url(&id, &bookmark.url).await,
+                Block::Embed { embed } => self.bookmark_from_url(&id, &embed.url).await,
+                Block::LinkPreview { link_preview } => {
+                    self.bookmark_from_url(&id, &link_preview.url).await
                 }
-                .into(),
-                Block::LinkPreview { link_preview } => Bookmark {
-                    id: id.clone(),
-                    url: link_preview.url.clone(),
-                    ..Default::default()
-                }
-                .into(),
                 Block::ChildPage { child_page } => Bookmark {
                     id: id.clone(),
                     url: notion_page_url(&id),
@@ -445,17 +438,48 @@ impl<'a> Converter<'a> {
         }
     }
 
-    fn bookmark(&self, id: &str, block: &BookmarkBlock) -> Component {
-        // A2UI `Bookmark.description` is reserved for the OG `meta
-        // description`. Notion's `caption` is user-authored text and is
-        // semantically distinct, so we deliberately do not populate
-        // `description` from it. OG enrichment is a separate concern.
+    /// Build a `Bookmark` for a URL-bearing block (`Block::Bookmark`,
+    /// `Block::Embed`, `Block::LinkPreview`). When
+    /// `enable_fetch_bookmark_meta` is on, fetches the URL once and
+    /// scrapes `<title>` / OG / Twitter Card tags to populate `title`,
+    /// `description`, and `image`. Notion's `caption` (user-authored text
+    /// under the URL) is deliberately not routed to `description`, which
+    /// is reserved for the OG `meta description`.
+    async fn bookmark_from_url(&self, id: &str, url: &str) -> Component {
+        let (title, description, image) = if self.enable_fetch_bookmark_meta {
+            self.fetch_bookmark_meta(url).await
+        } else {
+            (None, None, None)
+        };
         Bookmark {
             id: id.into(),
-            url: block.url.clone(),
+            url: url.into(),
+            title,
+            description,
+            image,
             ..Default::default()
         }
         .into()
+    }
+
+    async fn fetch_bookmark_meta(
+        &self,
+        url: &str,
+    ) -> (Option<String>, Option<String>, Option<String>) {
+        let Ok(response) = self
+            .reqwest
+            .get(url)
+            .header(reqwest::header::USER_AGENT, "n2a2ui")
+            .send()
+            .await
+        else {
+            return (None, None, None);
+        };
+        let Ok(html) = response.text().await else {
+            return (None, None, None);
+        };
+        let scraper = html_meta_scraper::MetaScraper::new(&html);
+        (scraper.title(), scraper.description(), scraper.image())
     }
 
     async fn column_list(

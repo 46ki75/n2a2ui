@@ -61,10 +61,11 @@ Adding a new component variant requires four edits in lockstep: define the struc
 
 ### Notion → A2UI conversion (`n2a2ui`)
 
-`Client` holds a `notionrs::client::Client` and a `reqwest::Client` plus two behavior toggles:
+`Client` holds a `notionrs::client::Client` and a `reqwest::Client` plus three behavior toggles:
 
 - `enable_unsupported_block` — when false, unknown block types are dropped; when true, they become `Unsupported` components carrying a `details` string.
 - `enable_fetch_image_meta` — when true, image blocks are fetched once with `reqwest` + `imagesize` to populate `width`/`height` on `BlockImage`. This adds a network round-trip per image.
+- `enable_fetch_bookmark_meta` — when true, `Block::Bookmark` / `Block::Embed` / `Block::LinkPreview` URLs are fetched once and parsed with `html-meta-scraper` to populate `title`, `description` (OG / Twitter / `<meta name=description>`), and `image` (OG / Twitter) on the resulting `Bookmark`. Adds one network round-trip per such block; failures degrade silently to the bare `{ url }` shape. Notion's `caption` is deliberately not routed here — it's user-authored text, distinct from the OG `meta description`.
 
 Three entry points, layered around the same `Converter` core:
 

@@ -23,6 +23,7 @@ fn make_converter<'a>(
         reqwest: reqwest_client,
         enable_unsupported_block: false,
         enable_fetch_image_meta: false,
+        enable_fetch_bookmark_meta: false,
     }
 }
 

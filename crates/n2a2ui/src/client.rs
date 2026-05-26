@@ -21,6 +21,12 @@ pub struct Client {
     /// If true, image blocks are fetched once to read their intrinsic
     /// dimensions and emit `width`/`height` on the resulting `BlockImage`.
     pub enable_fetch_image_meta: bool,
+
+    /// If true, bookmark / embed / link-preview URLs are fetched once and
+    /// the HTML is scraped for `<title>`, OG, and Twitter Card metadata to
+    /// populate `title`, `description`, and `image` on the resulting
+    /// `Bookmark`. Adds one network round-trip per such block.
+    pub enable_fetch_bookmark_meta: bool,
 }
 
 impl Client {
@@ -30,6 +36,7 @@ impl Client {
             reqwest: &self.reqwest_client,
             enable_unsupported_block: self.enable_unsupported_block,
             enable_fetch_image_meta: self.enable_fetch_image_meta,
+            enable_fetch_bookmark_meta: self.enable_fetch_bookmark_meta,
         }
     }
 

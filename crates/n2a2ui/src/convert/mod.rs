@@ -27,6 +27,7 @@ use notionrs::types::prelude::{
 use crate::error::Error;
 use crate::id::child_id;
 
+pub(crate) mod color;
 pub mod rich_text;
 
 #[cfg(test)]
@@ -296,8 +297,8 @@ impl<'a> Converter<'a> {
         Ok(Paragraph {
             id: id.into(),
             children: ChildList::from_ids(children),
-            color: paragraph_text_color(&block.color),
-            background_color: paragraph_background_color(&block.color),
+            color: color::map_color(block.color),
+            background_color: color::map_background_color(block.color),
             ..Default::default()
         }
         .into())
@@ -868,29 +869,6 @@ fn callout_type_from_icon(icon: Option<&EmojiAndIcon>) -> Option<CalloutType> {
         "⭐" | "❗" | "📌" => Some(CalloutType::Important),
         "⚠️" | "🚧" | "🟡" => Some(CalloutType::Warning),
         "🛑" | "❌" | "🔴" | "☠️" => Some(CalloutType::Caution),
-        _ => None,
-    }
-}
-
-/// Notion paragraph color tokens like `"red"` map to text color;
-/// `"red_background"` maps to background color. Anything else is `None`.
-fn paragraph_text_color(color: &notionrs::types::prelude::Color) -> Option<String> {
-    use notionrs::types::prelude::Color::*;
-    match color {
-        Blue | Brown | Gray | Green | Orange | Pink | Purple | Red | Yellow => {
-            Some(color.to_string())
-        }
-        _ => None,
-    }
-}
-
-fn paragraph_background_color(color: &notionrs::types::prelude::Color) -> Option<String> {
-    use notionrs::types::prelude::Color::*;
-    match color {
-        BlueBackground | BrownBackground | GrayBackground | GreenBackground | OrangeBackground
-        | PinkBackground | PurpleBackground | RedBackground | YellowBackground => {
-            Some(color.to_string())
-        }
         _ => None,
     }
 }

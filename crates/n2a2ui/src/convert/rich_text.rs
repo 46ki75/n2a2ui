@@ -8,8 +8,9 @@
 //! as their text.
 
 use n2a2ui_a2ui::v0_9::{Component, ComponentId, Decoration, Icon, LinkText, RichText};
-use notionrs::types::prelude::{Color, Mention, RichText as NotionRichText, RichTextAnnotations};
+use notionrs::types::prelude::{Mention, RichText as NotionRichText, RichTextAnnotations};
 
+use crate::convert::color;
 use crate::id::child_id;
 
 /// Convert a Notion rich-text array into a list of synthesized A2UI
@@ -92,10 +93,7 @@ fn convert_single(id: &str, item: &NotionRichText) -> Component {
     } else {
         Some(decoration)
     };
-    let color = match annotations.color {
-        Color::Default => None,
-        c => Some(c.to_string()),
-    };
+    let color = color::map_color(annotations.color);
 
     RichText {
         id: id.into(),

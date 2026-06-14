@@ -611,6 +611,118 @@
       ],
       "unevaluatedProperties": false
     },
+    "Audio": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/ComponentCommon"
+        },
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Audio"
+            },
+            "src": {
+              "type": "string",
+              "description": "The source URL of the audio to play."
+            },
+            "title": {
+              "type": "string",
+              "description": "Display title of the track. Falls back to the src filename when omitted."
+            },
+            "artist": {
+              "type": "string",
+              "description": "Artist or author name shown beneath the title."
+            },
+            "seekStep": {
+              "type": "number",
+              "description": "Number of seconds the skip-back/skip-forward controls jump. Defaults to 10."
+            },
+            "loop": {
+              "type": "boolean",
+              "description": "When true, the audio restarts when it reaches the end."
+            },
+            "autoPlay": {
+              "type": "boolean",
+              "description": "When true, playback starts automatically once enough data has loaded (subject to the browser's autoplay policy)."
+            }
+          },
+          "required": [
+            "component",
+            "src"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "Video": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/ComponentCommon"
+        },
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Video"
+            },
+            "src": {
+              "type": "string",
+              "description": "The source URL of the video to play."
+            },
+            "title": {
+              "type": "string",
+              "description": "Display title of the video. Falls back to the src filename when omitted."
+            },
+            "poster": {
+              "type": "string",
+              "description": "URL of an image shown before the video begins playing."
+            },
+            "width": {
+              "type": "number",
+              "description": "Intrinsic video width in pixels."
+            },
+            "height": {
+              "type": "number",
+              "description": "Intrinsic video height in pixels."
+            },
+            "seekStep": {
+              "type": "number",
+              "description": "Number of seconds the skip-back/skip-forward controls jump. Defaults to 10."
+            },
+            "loop": {
+              "type": "boolean",
+              "description": "When true, the video restarts when it reaches the end."
+            },
+            "autoPlay": {
+              "type": "boolean",
+              "description": "When true, playback starts automatically once enough data has loaded (subject to the browser's autoplay policy)."
+            },
+            "muted": {
+              "type": "boolean",
+              "description": "When true, the video starts muted."
+            },
+            "caption": {
+              "type": "string",
+              "description": "Optional caption shown below the video."
+            }
+          },
+          "required": [
+            "component",
+            "src"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
     "BlockImage": {
       "type": "object",
       "allOf": [

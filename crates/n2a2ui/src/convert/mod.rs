@@ -12,10 +12,10 @@
 use futures::TryStreamExt;
 use futures::future::BoxFuture;
 use n2a2ui_a2ui::v0_9::{
-    BlockImage, BlockQuote, Bookmark, Callout, CalloutType, ChildList, CodeBlock, Column,
+    Audio, BlockImage, BlockQuote, Bookmark, Callout, CalloutType, ChildList, CodeBlock, Column,
     ColumnList, Component, ComponentId, ContentTab, ContentTabs, Divider, File as FileComponent,
     Heading, HeadingLevel, Icon, Katex, List, ListItem, ListStyle, Mermaid, Paragraph, RichText,
-    Table, TableCell, TableRow, Toggle, Unsupported,
+    Table, TableCell, TableRow, Toggle, Unsupported, Video,
 };
 use notionrs::PaginateExt;
 use notionrs::types::prelude::{
@@ -196,8 +196,8 @@ impl<'a> Converter<'a> {
                 Block::Image { image } => self.image(&id, image).await,
                 Block::File { file } => file_component(&id, file),
                 Block::Pdf { pdf } => file_component(&id, pdf),
-                Block::Audio { audio } => file_component(&id, audio),
-                Block::Video { video } => file_component(&id, video),
+                Block::Audio { audio } => audio_component(&id, audio),
+                Block::Video { video } => video_component(&id, video),
                 Block::Bookmark { bookmark } => self.bookmark_from_url(&id, &bookmark.url).await,
                 Block::Embed { embed } => self.bookmark_from_url(&id, &embed.url).await,
                 Block::LinkPreview { link_preview } => {
@@ -828,6 +828,44 @@ fn file_component(id: &str, file: &NotionFile) -> Component {
         id: id.into(),
         src,
         name: file_name(file),
+        ..Default::default()
+    }
+    .into()
+}
+
+fn audio_component(id: &str, file: &NotionFile) -> Component {
+    let Some(src) = file_url(file) else {
+        return Unsupported {
+            id: id.into(),
+            details: Some("audio:api_uploaded".into()),
+            ..Default::default()
+        }
+        .into();
+    };
+    Audio {
+        id: id.into(),
+        src,
+        title: file_name(file),
+        ..Default::default()
+    }
+    .into()
+}
+
+fn video_component(id: &str, file: &NotionFile) -> Component {
+    let Some(src) = file_url(file) else {
+        return Unsupported {
+            id: id.into(),
+            details: Some("video:api_uploaded".into()),
+            ..Default::default()
+        }
+        .into();
+    };
+    let caption = file_caption(file).map(|rts| rts.iter().map(rich_text_plain).collect());
+    Video {
+        id: id.into(),
+        src,
+        title: file_name(file),
+        caption,
         ..Default::default()
     }
     .into()

@@ -89,6 +89,55 @@ fn surface_round_trip_preserves_order() {
 }
 
 #[test]
+fn audio_and_video_round_trip() {
+    let audio: Component = Audio {
+        id: "a1".into(),
+        src: "https://example.com/track.mp3".into(),
+        title: Some("Track".into()),
+        artist: Some("Artist".into()),
+        seek_step: Some(5.0),
+        r#loop: Some(true),
+        auto_play: Some(false),
+        ..Default::default()
+    }
+    .into();
+    let video: Component = Video {
+        id: "v1".into(),
+        src: "https://example.com/clip.mp4".into(),
+        title: Some("Clip".into()),
+        poster: Some("https://example.com/poster.jpg".into()),
+        width: Some(1920.0),
+        height: Some(1080.0),
+        muted: Some(true),
+        caption: Some("A clip".into()),
+        ..Default::default()
+    }
+    .into();
+
+    for component in [audio, video] {
+        let json = serde_json::to_string(&component).expect("serialize component");
+        let parsed: Component = serde_json::from_str(&json).expect("deserialize component");
+        assert_eq!(component, parsed);
+    }
+}
+
+#[test]
+fn audio_loop_field_serializes_as_loop() {
+    let audio: Component = Audio {
+        id: "a1".into(),
+        src: "s".into(),
+        r#loop: Some(true),
+        auto_play: Some(true),
+        ..Default::default()
+    }
+    .into();
+    let json = serde_json::to_string(&audio).expect("serialize audio");
+    assert!(json.contains("\"loop\":true"));
+    assert!(json.contains("\"autoPlay\":true"));
+    assert!(json.contains("\"component\":\"Audio\""));
+}
+
+#[test]
 fn callout_type_field_serializes_as_type() {
     let callout: Component = Callout {
         id: "c1".into(),

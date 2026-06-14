@@ -25,6 +25,8 @@ pub enum Component {
     Toggle(Toggle),
     Bookmark(Bookmark),
     File(File),
+    Audio(Audio),
+    Video(Video),
     BlockImage(BlockImage),
     CodeBlock(CodeBlock),
     Katex(Katex),
@@ -73,6 +75,8 @@ component_impls!(
     Toggle,
     Bookmark,
     File,
+    Audio,
+    Video,
     BlockImage,
     CodeBlock,
     Katex,
@@ -398,6 +402,59 @@ pub struct File {
     pub src: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+}
+
+/// Audio player wrapping a native `<audio>` element with a custom transport.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Audio {
+    pub id: ComponentId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accessibility: Option<AccessibilityAttributes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
+    pub src: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artist: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seek_step: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#loop: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_play: Option<bool>,
+}
+
+/// Video player wrapping a native `<video>` element with an optional poster
+/// frame and caption.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Video {
+    pub id: ComponentId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accessibility: Option<AccessibilityAttributes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
+    pub src: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poster: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seek_step: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#loop: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_play: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub muted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

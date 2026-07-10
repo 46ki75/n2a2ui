@@ -29,6 +29,7 @@ pub enum Component {
     Audio(Audio),
     Video(Video),
     BlockImage(BlockImage),
+    Html(Html),
     CodeBlock(CodeBlock),
     Katex(Katex),
     Mermaid(Mermaid),
@@ -80,6 +81,7 @@ component_impls!(
     Audio,
     Video,
     BlockImage,
+    Html,
     CodeBlock,
     Katex,
     Mermaid,
@@ -538,6 +540,40 @@ pub struct BlockImage {
     pub sizes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub caption: Option<String>,
+}
+
+/// Sandboxed HTML embed, rendered inside an iframe. Exactly one of `html`
+/// (inline markup, e.g. a Claude-authored artifact or a Notion page export)
+/// or `src` (a remote document URL, e.g. a presigned link, or a same-origin
+/// asset) should be set — the catalog doesn't validate cross-field
+/// constraints, so this is documentation-only, same as upstream.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Html {
+    pub id: ComponentId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accessibility: Option<AccessibilityAttributes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub src: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_height: Option<bool>,
+    /// Allow the embedded content to run JavaScript (adds the iframe
+    /// sandbox's `allow-scripts` token). Rendered clients default this to
+    /// `true` when unset; pass `Some(false)` explicitly to disable script
+    /// execution. `allow-same-origin` is never granted alongside this, in
+    /// `html` or `src` mode, so the embedded document can never escape the
+    /// sandbox even with scripts enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_scripts: Option<bool>,
+    /// Fallback pixel height for the iframe, used whenever `auto_height`
+    /// can't measure the actual content. Rendered clients default this to
+    /// `400` when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
 }
 
 // --- code / math / diagram --------------------------------------------------

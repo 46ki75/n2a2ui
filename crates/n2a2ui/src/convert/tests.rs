@@ -7,12 +7,12 @@
 //! invoked.
 
 use n2a2ui_a2ui::v0_9::{
-    ChildList, Column, Component, ComponentId, NotionCalloutColor, NotionCalloutIcon,
+    ChildList, Column, Component, ComponentId, Html, NotionCalloutColor, NotionCalloutIcon,
     NotionCalloutVariant, Surface, UpdateComponents,
 };
 use notionrs::types::prelude::BlockResponse;
 
-use super::{Converter, SiblingGroup, top_level_groups};
+use super::{Converter, SiblingGroup, is_html_file_url, top_level_groups};
 use crate::id::ROOT_ID;
 
 // --- fixture helpers --------------------------------------------------------
@@ -27,6 +27,7 @@ fn make_converter<'a>(
         enable_unsupported_block: false,
         enable_fetch_image_meta: false,
         enable_fetch_bookmark_meta: false,
+        enable_html_embed: false,
     }
 }
 
@@ -91,6 +92,10 @@ fn bookmark_with_caption(id: &str, url: &str, caption: &str) -> BlockResponse {
         "bookmark",
         serde_json::json!({ "url": url, "caption": [rich_text_text(caption)] }),
     )
+}
+
+fn embed(id: &str, url: &str) -> BlockResponse {
+    block_response(id, "embed", serde_json::json!({ "url": url }))
 }
 
 fn callout_with_builtin_icon(id: &str, text: &str, name: &str, color: &str) -> BlockResponse {
@@ -489,4 +494,94 @@ async fn bug6_table_filters_non_row_children_before_indexing_header() {
          regardless of any non-row siblings preceding it"
     );
     assert_eq!(body_ids, vec!["row-b".to_string()]);
+}
+
+// --- HTML embed detection ---------------------------------------------------
+
+#[test]
+fn is_html_file_url_matches_html_path_ignoring_query_and_case() {
+    assert!(is_html_file_url(
+        "https://prod-files-secure.s3.us-west-2.amazonaws.com/x/diagram.html?X-Amz-Date=1"
+    ));
+    assert!(is_html_file_url("https://example.com/DIAGRAM.HTML"));
+    assert!(is_html_file_url("https://example.com/a/b/c.html#section"));
+}
+
+#[test]
+fn is_html_file_url_rejects_non_html_paths() {
+    assert!(!is_html_file_url("https://example.com/video.mp4"));
+    assert!(!is_html_file_url(
+        "https://example.com/page?redirect=foo.html"
+    ));
+    assert!(!is_html_file_url("https://youtube.com/watch?v=abc123"));
+}
+
+#[tokio::test]
+async fn embed_with_html_url_and_embed_enabled_emits_html_component_with_src() {
+    let url = "https://prod-files-secure.s3.us-west-2.amazonaws.com/x/\
+               AgentCore_Harness_Diagram.html?X-Amz-Signature=abc";
+
+    let (nclient, rclient) = dummy_clients();
+    let converter = Converter {
+        enable_html_embed: true,
+        ..make_converter(&nclient, &rclient)
+    };
+
+    let block = embed("e-1", url);
+    let (id, components) = converter
+        .convert_single_block_to_chunk(&block)
+        .await
+        .expect("convert_single_block_to_chunk must succeed")
+        .expect("embed must produce a chunk");
+
+    assert_eq!(id, "e-1");
+    assert_eq!(components.len(), 1);
+    let Component::Html(Html { src, html, .. }) = &components[0] else {
+        panic!("expected Html variant, got {:?}", components[0]);
+    };
+    assert_eq!(src.as_deref(), Some(url));
+    assert!(html.is_none());
+}
+
+#[tokio::test]
+async fn embed_with_html_url_and_embed_disabled_falls_back_to_bookmark() {
+    let (nclient, rclient) = dummy_clients();
+    let converter = make_converter(&nclient, &rclient);
+
+    let url = "https://prod-files-secure.s3.us-west-2.amazonaws.com/x/diagram.html?sig=abc";
+    let block = embed("e-1", url);
+    let (id, components) = converter
+        .convert_single_block_to_chunk(&block)
+        .await
+        .expect("convert_single_block_to_chunk must succeed")
+        .expect("embed must produce a chunk");
+
+    assert_eq!(id, "e-1");
+    let Component::Bookmark(bookmark) = &components[0] else {
+        panic!("expected Bookmark variant, got {:?}", components[0]);
+    };
+    assert_eq!(bookmark.url, url);
+}
+
+#[tokio::test]
+async fn embed_with_non_html_url_and_embed_enabled_falls_back_to_bookmark() {
+    let (nclient, rclient) = dummy_clients();
+    let converter = Converter {
+        enable_html_embed: true,
+        ..make_converter(&nclient, &rclient)
+    };
+
+    let url = "https://www.youtube.com/watch?v=abc123";
+    let block = embed("e-1", url);
+    let (id, components) = converter
+        .convert_single_block_to_chunk(&block)
+        .await
+        .expect("convert_single_block_to_chunk must succeed")
+        .expect("embed must produce a chunk");
+
+    assert_eq!(id, "e-1");
+    let Component::Bookmark(bookmark) = &components[0] else {
+        panic!("expected Bookmark variant, got {:?}", components[0]);
+    };
+    assert_eq!(bookmark.url, url);
 }

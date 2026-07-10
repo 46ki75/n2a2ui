@@ -87,7 +87,8 @@ Conversion lives in `src/convert/`. The eager `Converter::convert_children` walk
 
 ## Conventions
 
-- PRs target `develop` or `release/*`, not `main` (see `.github/pull_request_template.md`).
+- PRs target `develop` or `release/*`, not `main` (see `.github/pull_request_template.md`). Neither branch currently exists on the remote — fall back to `main` until one is cut.
+- Cargo versions: `n2a2ui` and `n2a2ui-a2ui` are kept in lockstep — bump both `Cargo.toml` versions together, and update `n2a2ui`'s pinned `n2a2ui-a2ui = { path = ..., version = "0.X" }` to match. Tag releases `vX.Y.Z` (workspace-wide); `n2a2ui-a2ui` additionally gets its own `n2a2ui-a2ui-vX.Y.Z` tag (likely for crates.io publishing).
 - Workspace deps (`serde`, `serde_json`, `indexmap`, `async-stream`) are declared once in the root `Cargo.toml` and pulled into members via `{ workspace = true }` — add new shared deps there, not per-crate.
 - The `n2a2ui-a2ui` crate must stay I/O-free (no `reqwest`, `tokio`, etc.) — it's the pure schema crate consumed by the converter and potentially other producers.
-- When changing a component's schema in `crates/n2a2ui-a2ui`, mirror the same change in the upstream TypeScript catalog at `/home/ikuma/org/46ki75/elmethis/packages/core/src/a2ui/v0_9/block-catalog.ts` (and the matching Qwik renderer/story/spec under `packages/qwik/src/components/a2ui/catalog/`). The Rust schema is a vendored mirror of that source of truth.
+- When changing a component's schema in `crates/n2a2ui-a2ui`, mirror the same change in the upstream TypeScript catalog at `/home/ikuma/org/46ki75/elmethis/packages/core/src/a2ui/v0_9/notion-block-catalog.ts` (renamed from `block-catalog.ts`; the catalog id lives in `notion-block-catalog-json.ts` as `NOTION_BLOCK_CATALOG_ID`) and the matching Qwik renderer/story/spec at `packages/qwik/src/components/a2ui/catalog/notion-block-catalog.tsx`. The Rust schema is a vendored mirror of that source of truth — regenerate and diff-check it with `cd packages/core && npx tsx scripts/emit-catalog.ts` (writes `dist/a2ui/v0_9/notion_block_catalog.json`).

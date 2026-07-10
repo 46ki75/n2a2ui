@@ -154,6 +154,53 @@ fn callout_type_field_serializes_as_type() {
 }
 
 #[test]
+fn notion_callout_round_trips_with_emoji_and_image_icons() {
+    let emoji: Component = NotionCallout {
+        id: "nc1".into(),
+        children: ChildList::from_ids(["p1"]),
+        icon: Some(NotionCalloutIcon::Emoji {
+            emoji: "💡".into()
+        }),
+        color: Some(NotionCalloutColor::Blue),
+        variant: Some(NotionCalloutVariant::Filled),
+        ..Default::default()
+    }
+    .into();
+    let image: Component = NotionCallout {
+        id: "nc2".into(),
+        children: ChildList::from_ids(["p2"]),
+        icon: Some(NotionCalloutIcon::Image {
+            src: "https://example.com/icon.svg".into(),
+            alt: Some("info".into()),
+        }),
+        ..Default::default()
+    }
+    .into();
+
+    for component in [emoji, image] {
+        let json = serde_json::to_string(&component).expect("serialize component");
+        let parsed: Component = serde_json::from_str(&json).expect("deserialize component");
+        assert_eq!(component, parsed);
+    }
+}
+
+#[test]
+fn notion_callout_icon_serializes_with_kind_tag() {
+    let callout: Component = NotionCallout {
+        id: "nc1".into(),
+        children: ChildList::from_ids(["p1"]),
+        icon: Some(NotionCalloutIcon::Emoji {
+            emoji: "💡".into()
+        }),
+        ..Default::default()
+    }
+    .into();
+    let json = serde_json::to_string(&callout).expect("serialize callout");
+    assert!(json.contains("\"kind\":\"emoji\""));
+    assert!(json.contains("\"component\":\"NotionCallout\""));
+}
+
+#[test]
 fn heading_level_serializes_as_number() {
     let h2: Component = Heading {
         id: "h2".into(),

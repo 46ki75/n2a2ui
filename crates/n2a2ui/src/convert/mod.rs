@@ -12,16 +12,17 @@
 use futures::TryStreamExt;
 use futures::future::BoxFuture;
 use n2a2ui_a2ui::v0_9::{
-    Audio, BlockImage, BlockQuote, Bookmark, Callout, CalloutType, ChildList, CodeBlock, Column,
-    ColumnList, Component, ComponentId, ContentTab, ContentTabs, Divider, File as FileComponent,
-    Heading, HeadingLevel, Icon, Katex, List, ListItem, ListStyle, Mermaid, Paragraph, RichText,
-    Table, TableCell, TableRow, Toggle, Unsupported, Video,
+    Audio, BlockImage, BlockQuote, Bookmark, ChildList, CodeBlock, Column, ColumnList, Component,
+    ComponentId, ContentTab, ContentTabs, Divider, File as FileComponent, Heading, HeadingLevel,
+    Katex, List, ListItem, ListStyle, Mermaid, NotionCallout, NotionCalloutColor,
+    NotionCalloutIcon, NotionCalloutVariant, Paragraph, RichText, Table, TableCell, TableRow,
+    Toggle, Unsupported, Video,
 };
 use notionrs::PaginateExt;
 use notionrs::types::prelude::{
-    Block, BlockResponse, BulletedListItemBlock, CalloutBlock, EmojiAndIcon, EquationBlock,
-    File as NotionFile, Language, NumberedListItemBlock, ParagraphBlock, QuoteBlock,
-    RichText as NotionRichText, TableRowBlock, ToDoBlock, ToggleBlock,
+    Block, BlockResponse, BulletedListItemBlock, CalloutBlock, Color as NotionColor, EmojiAndIcon,
+    EquationBlock, File as NotionFile, IconColor, Language, NumberedListItemBlock, ParagraphBlock,
+    QuoteBlock, RichText as NotionRichText, TableRowBlock, ToDoBlock, ToggleBlock,
 };
 
 use crate::error::Error;
@@ -345,26 +346,21 @@ impl<'a> Converter<'a> {
         has_children: bool,
         bag: &mut Vec<Component>,
     ) -> Result<Component, Error> {
-        let mut children = Vec::new();
-        if let Some(icon) = block.icon.as_ref() {
-            let icon_id = child_id(id, "icon", 0);
-            if let Some(component) = inline_icon_component(&icon_id, icon) {
-                bag.push(component);
-                children.push(icon_id);
-            }
-        }
         let (rt_ids, mut rt) = rich_text::convert_rich_texts(id, "rich_text", &block.rich_text);
         bag.append(&mut rt);
-        children.extend(rt_ids);
+        let mut children = rt_ids;
         if has_children {
             let (cs, comps) = self.convert_children(id).await?;
             bag.extend(comps);
             children.extend(cs);
         }
-        Ok(Callout {
+        let (color, variant) = notion_callout_color_and_variant(block.color);
+        Ok(NotionCallout {
             id: id.into(),
             children: ChildList::from_ids(children),
-            callout_type: callout_type_from_icon(block.icon.as_ref()),
+            icon: block.icon.as_ref().and_then(notion_callout_icon),
+            color: Some(color),
+            variant,
             ..Default::default()
         }
         .into())
@@ -876,62 +872,141 @@ fn notion_page_url(block_id: &str) -> String {
     format!("https://www.notion.so/{stripped}")
 }
 
-/// Render a Notion `EmojiAndIcon` as an inline A2UI component:
-/// - `Emoji` becomes a `RichText` carrying the Unicode emoji character
-///   (the catalog has no glyph component, and a literal emoji string
-///   renders inline correctly without needing an image fetch).
-/// - `CustomEmoji` and `File` become an `Icon` pointing at their URL.
-/// - `Icon` (Notion's named built-in icons) has no URL we can serve,
-///   so it's skipped.
-fn inline_icon_component(id: &str, icon: &EmojiAndIcon) -> Option<Component> {
+/// Resolve any Notion icon variant that carries (or can be derived to
+/// carry) a URL to `(src, alt)`. `Emoji` has no URL and is handled
+/// separately by callers.
+fn icon_url_and_alt(icon: &EmojiAndIcon) -> Option<(String, Option<String>)> {
     match icon {
-        EmojiAndIcon::Emoji(emoji) => Some(
-            RichText {
-                id: id.into(),
-                text: emoji.emoji.clone().into(),
-                ..Default::default()
-            }
-            .into(),
-        ),
-        EmojiAndIcon::CustomEmoji(custom) => Some(
-            Icon {
-                id: id.into(),
-                src: custom.custom_emoji.url.clone(),
-                alt: Some(custom.custom_emoji.name.clone()),
-                ..Default::default()
-            }
-            .into(),
-        ),
-        EmojiAndIcon::File(file) => {
-            let src = file_url(file)?;
-            Some(
-                Icon {
-                    id: id.into(),
-                    src,
-                    alt: file_name(file),
-                    ..Default::default()
-                }
-                .into(),
-            )
-        }
-        EmojiAndIcon::Icon(_) => None,
+        EmojiAndIcon::Emoji(_) => None,
+        EmojiAndIcon::CustomEmoji(custom) => Some((
+            custom.custom_emoji.url.clone(),
+            Some(custom.custom_emoji.name.clone()),
+        )),
+        EmojiAndIcon::File(file) => Some((file_url(file)?, file_name(file))),
+        EmojiAndIcon::Icon(icon) => Some((
+            notion_icon_url(&icon.icon.name, icon.icon.color),
+            Some(icon.icon.name.clone()),
+        )),
     }
 }
 
-/// Use the callout's emoji icon as a hint for the A2UI `CalloutType`.
-/// Notion doesn't model a discrete type — we map the common emojis used
-/// for callouts to the catalog's enum and fall back to `None` otherwise.
-fn callout_type_from_icon(icon: Option<&EmojiAndIcon>) -> Option<CalloutType> {
-    let EmojiAndIcon::Emoji(emoji) = icon? else {
-        return None;
+/// Render a Notion `EmojiAndIcon` as a `NotionCallout`'s `icon` prop: an
+/// `Emoji` variant for `EmojiAndIcon::Emoji`, or an `Image` variant (URL
+/// resolved via `icon_url_and_alt`) for everything else.
+fn notion_callout_icon(icon: &EmojiAndIcon) -> Option<NotionCalloutIcon> {
+    if let EmojiAndIcon::Emoji(emoji) = icon {
+        return Some(NotionCalloutIcon::Emoji {
+            emoji: emoji.emoji.clone(),
+        });
+    }
+    let (src, alt) = icon_url_and_alt(icon)?;
+    Some(NotionCalloutIcon::Image { src, alt })
+}
+
+/// Notion's built-in named icon set (distinct from emoji/custom_emoji/file)
+/// isn't exposed as a URL by the API — only `{ name, color }` — but the
+/// same SVGs Notion's own web app renders are served unauthenticated at
+/// this path. The color segment is the lowercase color name with no
+/// separator (`"lightgray"`), which differs from the API's snake_case
+/// `IconColor` wire value (`"light_gray"`), so it can't be reused as-is.
+fn notion_icon_url(name: &str, color: IconColor) -> String {
+    let color = match color {
+        IconColor::Blue => "blue",
+        IconColor::Brown => "brown",
+        IconColor::Gray => "gray",
+        IconColor::Green => "green",
+        IconColor::Lightgray => "lightgray",
+        IconColor::Orange => "orange",
+        IconColor::Pink => "pink",
+        IconColor::Purple => "purple",
+        IconColor::Red => "red",
+        IconColor::Yellow => "yellow",
     };
-    match emoji.emoji.as_str() {
-        "ℹ️" | "📝" | "🗒️" | "💡" => Some(CalloutType::Note),
-        "✅" | "✔️" | "🟢" => Some(CalloutType::Tip),
-        "⭐" | "❗" | "📌" => Some(CalloutType::Important),
-        "⚠️" | "🚧" | "🟡" => Some(CalloutType::Warning),
-        "🛑" | "❌" | "🔴" | "☠️" => Some(CalloutType::Caution),
-        _ => None,
+    let mut url =
+        url::Url::parse("https://app.notion.com/icons").expect("static base URL is valid");
+    url.path_segments_mut()
+        .expect("base URL is not cannot-be-a-base")
+        .push(&format!("{name}_{color}.svg"));
+    url.into()
+}
+
+/// Map Notion's block-level `color` (shared across all blocks, foreground
+/// and `*_background` variants alike) to `NotionCallout`'s `color` +
+/// `variant`. A `*_background` value fills the callout (`variant: filled`);
+/// a plain foreground value only tints the icon/border (`variant:
+/// outlined`) since it carries no background. Notion has no `brown` or
+/// `pink` in the A2UI callout palette — they map to their closest neutral
+/// (`gray`) and hue (`magenta`) equivalents.
+fn notion_callout_color_and_variant(
+    color: NotionColor,
+) -> (NotionCalloutColor, Option<NotionCalloutVariant>) {
+    use NotionColor::*;
+    match color {
+        Default => (NotionCalloutColor::Default, None),
+        DefaultBackground => (
+            NotionCalloutColor::Default,
+            Some(NotionCalloutVariant::Filled),
+        ),
+        Blue => (
+            NotionCalloutColor::Blue,
+            Some(NotionCalloutVariant::Outlined),
+        ),
+        BlueBackground => (NotionCalloutColor::Blue, Some(NotionCalloutVariant::Filled)),
+        Gray => (
+            NotionCalloutColor::Gray,
+            Some(NotionCalloutVariant::Outlined),
+        ),
+        GrayBackground => (NotionCalloutColor::Gray, Some(NotionCalloutVariant::Filled)),
+        Brown => (
+            NotionCalloutColor::Gray,
+            Some(NotionCalloutVariant::Outlined),
+        ),
+        BrownBackground => (NotionCalloutColor::Gray, Some(NotionCalloutVariant::Filled)),
+        Green => (
+            NotionCalloutColor::Green,
+            Some(NotionCalloutVariant::Outlined),
+        ),
+        GreenBackground => (
+            NotionCalloutColor::Green,
+            Some(NotionCalloutVariant::Filled),
+        ),
+        Orange => (
+            NotionCalloutColor::Orange,
+            Some(NotionCalloutVariant::Outlined),
+        ),
+        OrangeBackground => (
+            NotionCalloutColor::Orange,
+            Some(NotionCalloutVariant::Filled),
+        ),
+        Pink => (
+            NotionCalloutColor::Magenta,
+            Some(NotionCalloutVariant::Outlined),
+        ),
+        PinkBackground => (
+            NotionCalloutColor::Magenta,
+            Some(NotionCalloutVariant::Filled),
+        ),
+        Purple => (
+            NotionCalloutColor::Purple,
+            Some(NotionCalloutVariant::Outlined),
+        ),
+        PurpleBackground => (
+            NotionCalloutColor::Purple,
+            Some(NotionCalloutVariant::Filled),
+        ),
+        Red => (
+            NotionCalloutColor::Red,
+            Some(NotionCalloutVariant::Outlined),
+        ),
+        RedBackground => (NotionCalloutColor::Red, Some(NotionCalloutVariant::Filled)),
+        Yellow => (
+            NotionCalloutColor::Yellow,
+            Some(NotionCalloutVariant::Outlined),
+        ),
+        YellowBackground => (
+            NotionCalloutColor::Yellow,
+            Some(NotionCalloutVariant::Filled),
+        ),
     }
 }
 

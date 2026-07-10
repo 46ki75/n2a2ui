@@ -6,7 +6,10 @@
 //! every block has `has_children = false`, so `fetch_children` is never
 //! invoked.
 
-use n2a2ui_a2ui::v0_9::{ChildList, Column, Component, ComponentId, Surface, UpdateComponents};
+use n2a2ui_a2ui::v0_9::{
+    ChildList, Column, Component, ComponentId, NotionCalloutColor, NotionCalloutIcon,
+    NotionCalloutVariant, Surface, UpdateComponents,
+};
 use notionrs::types::prelude::BlockResponse;
 
 use super::{Converter, SiblingGroup, top_level_groups};
@@ -87,6 +90,30 @@ fn bookmark_with_caption(id: &str, url: &str, caption: &str) -> BlockResponse {
         id,
         "bookmark",
         serde_json::json!({ "url": url, "caption": [rich_text_text(caption)] }),
+    )
+}
+
+fn callout_with_builtin_icon(id: &str, text: &str, name: &str, color: &str) -> BlockResponse {
+    block_response(
+        id,
+        "callout",
+        serde_json::json!({
+            "rich_text": [rich_text_text(text)],
+            "icon": { "type": "icon", "icon": { "name": name, "color": color } },
+            "color": "default",
+        }),
+    )
+}
+
+fn callout_with_emoji(id: &str, text: &str, emoji: &str, color: &str) -> BlockResponse {
+    block_response(
+        id,
+        "callout",
+        serde_json::json!({
+            "rich_text": [rich_text_text(text)],
+            "icon": { "type": "emoji", "emoji": emoji },
+            "color": color,
+        }),
     )
 }
 
@@ -302,6 +329,128 @@ async fn bug1_streaming_reconstruction_preserves_eager_component_order() {
         "reconstructing a Surface from convert_block_stream messages must \
          preserve the eager IndexMap component order"
     );
+}
+
+// --- built-in `icon` type: no URL in the API response, so map to Notion's
+// public icon SVG asset instead of dropping it -----------------------------
+
+/// Notion's built-in named icons (`{ type: "icon", icon: { name, color } }`,
+/// as opposed to `emoji`/`custom_emoji`/`file`) carry no URL in the API
+/// response. They're served as public, unauthenticated SVGs at
+/// `https://app.notion.com/icons/{name}_{color}.svg` — verified against the
+/// live endpoint — so the converter should synthesize that URL and set it
+/// as the `NotionCallout`'s `icon` prop rather than silently dropping it.
+#[tokio::test]
+async fn builtin_icon_maps_to_notion_asset_url() {
+    let (nclient, rclient) = dummy_clients();
+    let converter = make_converter(&nclient, &rclient);
+
+    let callout = callout_with_builtin_icon("co-1", "heads up", "info-alternate", "blue");
+    let (id, components) = converter
+        .convert_single_block_to_chunk(&callout)
+        .await
+        .expect("convert_single_block_to_chunk must succeed")
+        .expect("callout must produce a chunk");
+
+    assert_eq!(id, "co-1");
+    let Component::NotionCallout(callout) = components.last().expect("callout must be non-empty")
+    else {
+        panic!(
+            "expected the last component to be a NotionCallout variant, got {:?}",
+            components.last()
+        );
+    };
+    let Some(NotionCalloutIcon::Image { src, alt }) = &callout.icon else {
+        panic!("expected an Image icon, got {:?}", callout.icon);
+    };
+    assert_eq!(src, "https://app.notion.com/icons/info-alternate_blue.svg");
+    assert_eq!(alt.as_deref(), Some("info-alternate"));
+}
+
+/// The URL path's color segment (`"lightgray"`) differs from the API's
+/// snake_case `IconColor` wire value (`"light_gray"`) — this pins that
+/// translation so a future refactor can't silently reuse the wire value.
+#[tokio::test]
+async fn builtin_icon_lightgray_color_maps_to_unseparated_url_segment() {
+    let (nclient, rclient) = dummy_clients();
+    let converter = make_converter(&nclient, &rclient);
+
+    let callout = callout_with_builtin_icon("co-2", "note", "home", "light_gray");
+    let (_, components) = converter
+        .convert_single_block_to_chunk(&callout)
+        .await
+        .expect("convert_single_block_to_chunk must succeed")
+        .expect("callout must produce a chunk");
+
+    let Component::NotionCallout(callout) = components.last().expect("callout must be non-empty")
+    else {
+        panic!(
+            "expected the last component to be a NotionCallout variant, got {:?}",
+            components.last()
+        );
+    };
+    let Some(NotionCalloutIcon::Image { src, .. }) = &callout.icon else {
+        panic!("expected an Image icon, got {:?}", callout.icon);
+    };
+    assert_eq!(src, "https://app.notion.com/icons/home_lightgray.svg");
+}
+
+// --- NotionCallout: color/variant mapping from Notion's shared block color -
+
+/// A `*_background` color fills the callout (`variant: filled`) and its
+/// hue maps straight across to the A2UI palette.
+#[tokio::test]
+async fn callout_maps_emoji_icon_and_background_color_to_filled_variant() {
+    let (nclient, rclient) = dummy_clients();
+    let converter = make_converter(&nclient, &rclient);
+
+    let callout = callout_with_emoji("co-3", "note", "💡", "blue_background");
+    let (_, components) = converter
+        .convert_single_block_to_chunk(&callout)
+        .await
+        .expect("convert_single_block_to_chunk must succeed")
+        .expect("callout must produce a chunk");
+
+    let Component::NotionCallout(callout) = components.last().expect("callout must be non-empty")
+    else {
+        panic!(
+            "expected the last component to be a NotionCallout variant, got {:?}",
+            components.last()
+        );
+    };
+    assert_eq!(
+        callout.icon,
+        Some(NotionCalloutIcon::Emoji {
+            emoji: "💡".into()
+        })
+    );
+    assert_eq!(callout.color, Some(NotionCalloutColor::Blue));
+    assert_eq!(callout.variant, Some(NotionCalloutVariant::Filled));
+}
+
+/// A plain (non-`*_background`) color carries no fill, so it maps to
+/// `variant: outlined` instead.
+#[tokio::test]
+async fn callout_maps_plain_foreground_color_to_outlined_variant() {
+    let (nclient, rclient) = dummy_clients();
+    let converter = make_converter(&nclient, &rclient);
+
+    let callout = callout_with_emoji("co-4", "note", "💡", "blue");
+    let (_, components) = converter
+        .convert_single_block_to_chunk(&callout)
+        .await
+        .expect("convert_single_block_to_chunk must succeed")
+        .expect("callout must produce a chunk");
+
+    let Component::NotionCallout(callout) = components.last().expect("callout must be non-empty")
+    else {
+        panic!(
+            "expected the last component to be a NotionCallout variant, got {:?}",
+            components.last()
+        );
+    };
+    assert_eq!(callout.color, Some(NotionCalloutColor::Blue));
+    assert_eq!(callout.variant, Some(NotionCalloutVariant::Outlined));
 }
 
 // --- Bug #6: table row_index over unfiltered iterator ----------------------

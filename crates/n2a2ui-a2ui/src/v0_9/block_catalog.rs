@@ -21,6 +21,7 @@ pub enum Component {
     ListItem(ListItem),
     BlockQuote(BlockQuote),
     Callout(Callout),
+    NotionCallout(NotionCallout),
     Divider(Divider),
     Toggle(Toggle),
     Bookmark(Bookmark),
@@ -71,6 +72,7 @@ component_impls!(
     ListItem,
     BlockQuote,
     Callout,
+    NotionCallout,
     Divider,
     Toggle,
     Bookmark,
@@ -348,6 +350,64 @@ pub struct Callout {
     pub children: ChildList,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub callout_type: Option<CalloutType>,
+}
+
+/// Icon shown before a `NotionCallout`'s content: an emoji character, or an
+/// image (custom emoji / uploaded file / Notion's built-in named icon set,
+/// all of which resolve to a URL).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum NotionCalloutIcon {
+    Emoji {
+        emoji: String,
+    },
+    Image {
+        src: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        alt: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NotionCalloutColor {
+    Default,
+    Gray,
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Cyan,
+    Blue,
+    Purple,
+    Magenta,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NotionCalloutVariant {
+    Filled,
+    Outlined,
+}
+
+/// Notion-style callout: an icon (emoji or image) plus a colored, filled or
+/// outlined block. Unlike [`Callout`], it carries no severity/flavor text —
+/// the color and icon alone convey meaning.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotionCallout {
+    pub id: ComponentId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accessibility: Option<AccessibilityAttributes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<NotionCalloutIcon>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<NotionCalloutColor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<NotionCalloutVariant>,
+    pub children: ChildList,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

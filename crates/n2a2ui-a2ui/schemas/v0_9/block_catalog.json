@@ -483,6 +483,103 @@
       ],
       "unevaluatedProperties": false
     },
+    "NotionCallout": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/ComponentCommon"
+        },
+        {
+          "$ref": "#/$defs/CatalogComponentCommon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "NotionCallout"
+            },
+            "icon": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "emoji"
+                    },
+                    "emoji": {
+                      "type": "string",
+                      "description": "A single emoji character."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "emoji"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "image"
+                    },
+                    "src": {
+                      "type": "string",
+                      "description": "The source URL of the icon image."
+                    },
+                    "alt": {
+                      "type": "string",
+                      "description": "Accessible alt text for the icon."
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "src"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "description": "Icon shown before the content: an emoji or an image."
+            },
+            "color": {
+              "type": "string",
+              "enum": [
+                "default",
+                "gray",
+                "red",
+                "orange",
+                "yellow",
+                "green",
+                "cyan",
+                "blue",
+                "purple",
+                "magenta"
+              ],
+              "description": "Accent hue for the callout."
+            },
+            "variant": {
+              "type": "string",
+              "enum": [
+                "filled",
+                "outlined"
+              ],
+              "description": "Tinted background ('filled') or transparent with a colored border ('outlined')."
+            },
+            "children": {
+              "$ref": "#/$defs/ChildList",
+              "description": "Ordered list of child component IDs that make up the callout body."
+            }
+          },
+          "required": [
+            "component",
+            "children"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
     "Divider": {
       "type": "object",
       "allOf": [

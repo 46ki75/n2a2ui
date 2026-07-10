@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cargo workspace (edition 2024, resolver 3) with two member crates:
 
-- `crates/n2a2ui-a2ui` — Rust types for the [A2UI](https://a2ui.dev) v0.9 Elmethis Block Catalog. Pure data model; no I/O. The wire schema is vendored at `crates/n2a2ui-a2ui/schemas/v0_9/block_catalog.json`.
+- `crates/n2a2ui-a2ui` — Rust types for the [A2UI](https://a2ui.dev) v0.9 Elmethis Notion Block Catalog. Pure data model; no I/O. The wire schema is vendored at `crates/n2a2ui-a2ui/schemas/v0_9/notion_block_catalog.json`.
 - `crates/n2a2ui` — converter that walks a Notion block tree (via `notionrs`) and emits an A2UI `Surface` (or the v0.9 message sequence that renders it).
 
 ## Commands
@@ -37,7 +37,7 @@ cargo clippy --all-targets
 cargo fmt
 ```
 
-Note: `crates/n2a2ui-a2ui/tests/schema.rs` `include_str!`s the vendored catalog and asserts its `$id` matches `n2a2ui_a2ui::v0_9::BLOCK_CATALOG_ID` — if you bump the catalog version, both the URL constant and the vendored file must move together or that test fails.
+Note: `crates/n2a2ui-a2ui/tests/schema.rs` `include_str!`s the vendored catalog and asserts its `$id` matches `n2a2ui_a2ui::v0_9::NOTION_BLOCK_CATALOG_ID` — if you bump the catalog version, both the URL constant and the vendored file must move together or that test fails.
 
 ## Architecture
 
@@ -61,11 +61,12 @@ Adding a new component variant requires four edits in lockstep: define the struc
 
 ### Notion → A2UI conversion (`n2a2ui`)
 
-`Client` holds a `notionrs::client::Client` and a `reqwest::Client` plus three behavior toggles:
+`Client` holds a `notionrs::client::Client` and a `reqwest::Client` plus four behavior toggles:
 
 - `enable_unsupported_block` — when false, unknown block types are dropped; when true, they become `Unsupported` components carrying a `details` string.
 - `enable_fetch_image_meta` — when true, image blocks are fetched once with `reqwest` + `imagesize` to populate `width`/`height` on `BlockImage`. This adds a network round-trip per image.
 - `enable_fetch_bookmark_meta` — when true, `Block::Bookmark` / `Block::Embed` / `Block::LinkPreview` URLs are fetched once and parsed with `html-meta-scraper` to populate `title`, `description` (OG / Twitter / `<meta name=description>`), and `image` (OG / Twitter) on the resulting `Bookmark`. Adds one network round-trip per such block; failures degrade silently to the bare `{ url }` shape. Notion's `caption` is deliberately not routed here — it's user-authored text, distinct from the OG `meta description`.
+- `enable_html_embed` — Notion's "HTML block" feature surfaces over the API as a plain `Block::Embed` whose `url` points at an uploaded `.html` file (Notion-hosted S3, typically presigned and time-limited; `notionrs_types::EmbedBlock` doesn't expose `caption`, so the filename isn't otherwise visible). `embed_from_url` (`src/convert/mod.rs`) detects this via `is_html_file_url` — the URL's path, ignoring the query string, ends in `.html` (case-insensitive) — and when the toggle is on, emits an `Html` component with `src` set to the URL (no fetch; the A2UI client loads it directly via `<iframe src>`) instead of `Bookmark`. Off by default; falls back to the normal `Bookmark` path when disabled or when the URL doesn't match.
 
 Three entry points, layered around the same `Converter` core:
 

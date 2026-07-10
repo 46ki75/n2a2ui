@@ -2,17 +2,17 @@
 
 use n2a2ui_a2ui::v0_9::*;
 
-const BLOCK_CATALOG_JSON: &str = include_str!("../schemas/v0_9/block_catalog.json");
+const NOTION_BLOCK_CATALOG_JSON: &str = include_str!("../schemas/v0_9/notion_block_catalog.json");
 
 #[test]
 fn vendored_catalog_is_valid_json_and_has_expected_id() {
-    let value: serde_json::Value = serde_json::from_str(BLOCK_CATALOG_JSON)
-        .expect("vendored block_catalog.json must be valid JSON");
+    let value: serde_json::Value = serde_json::from_str(NOTION_BLOCK_CATALOG_JSON)
+        .expect("vendored notion_block_catalog.json must be valid JSON");
     let id = value
         .get("$id")
         .and_then(|v| v.as_str())
         .expect("catalog must declare $id");
-    assert_eq!(id, BLOCK_CATALOG_ID);
+    assert_eq!(id, NOTION_BLOCK_CATALOG_ID);
 }
 
 #[test]
@@ -138,6 +138,71 @@ fn audio_loop_field_serializes_as_loop() {
 }
 
 #[test]
+fn html_round_trip() {
+    let html: Component = Html {
+        id: "h1".into(),
+        html: Some("<p>hello</p>".into()),
+        auto_height: Some(false),
+        ..Default::default()
+    }
+    .into();
+
+    let json = serde_json::to_string(&html).expect("serialize component");
+    let parsed: Component = serde_json::from_str(&json).expect("deserialize component");
+    assert_eq!(html, parsed);
+}
+
+#[test]
+fn html_auto_height_is_omitted_when_none() {
+    let html: Component = Html {
+        id: "h1".into(),
+        html: Some("<p>hello</p>".into()),
+        ..Default::default()
+    }
+    .into();
+    let json = serde_json::to_string(&html).expect("serialize html");
+    assert!(json.contains("\"component\":\"Html\""));
+    assert!(json.contains("\"html\":\"<p>hello</p>\""));
+    assert!(!json.contains("autoHeight"));
+}
+
+#[test]
+fn html_src_round_trip_omits_html() {
+    let html: Component = Html {
+        id: "h1".into(),
+        src: Some("https://example.com/doc.html".into()),
+        ..Default::default()
+    }
+    .into();
+
+    let json = serde_json::to_string(&html).expect("serialize component");
+    assert!(json.contains("\"src\":\"https://example.com/doc.html\""));
+    assert!(!json.contains("\"html\""));
+
+    let parsed: Component = serde_json::from_str(&json).expect("deserialize component");
+    assert_eq!(html, parsed);
+}
+
+#[test]
+fn html_allow_scripts_and_height_round_trip() {
+    let html: Component = Html {
+        id: "h1".into(),
+        src: Some("https://example.com/doc.html".into()),
+        allow_scripts: Some(true),
+        height: Some(600.0),
+        ..Default::default()
+    }
+    .into();
+
+    let json = serde_json::to_string(&html).expect("serialize component");
+    assert!(json.contains("\"allowScripts\":true"));
+    assert!(json.contains("\"height\":600.0"));
+
+    let parsed: Component = serde_json::from_str(&json).expect("deserialize component");
+    assert_eq!(html, parsed);
+}
+
+#[test]
 fn callout_type_field_serializes_as_type() {
     let callout: Component = Callout {
         id: "c1".into(),
@@ -232,13 +297,13 @@ fn surface_to_messages_emits_create_then_update() {
         .into(),
     );
 
-    let messages = surface.to_messages("my-surface", BLOCK_CATALOG_ID);
+    let messages = surface.to_messages("my-surface", NOTION_BLOCK_CATALOG_ID);
     assert_eq!(messages.len(), 2);
 
     match &messages[0].body {
         MessageBody::CreateSurface(cs) => {
             assert_eq!(cs.surface_id, "my-surface");
-            assert_eq!(cs.catalog_id, BLOCK_CATALOG_ID);
+            assert_eq!(cs.catalog_id, NOTION_BLOCK_CATALOG_ID);
         }
         other => panic!("expected CreateSurface, got {other:?}"),
     }
@@ -257,7 +322,7 @@ fn surface_to_messages_emits_create_then_update() {
 fn message_envelope_wire_shape_round_trips() {
     let msg = Message::new(CreateSurface {
         surface_id: "s1".into(),
-        catalog_id: BLOCK_CATALOG_ID.into(),
+        catalog_id: NOTION_BLOCK_CATALOG_ID.into(),
         theme: None,
         send_data_model: Some(true),
     });
@@ -295,7 +360,7 @@ fn content_tab_uses_child_list_label_and_content() {
 #[test]
 fn data_binding_rejects_unknown_fields() {
     // Schema: $defs/DataBinding has `additionalProperties: false`
-    // (block_catalog.json:1048). Today this passes because the Rust struct
+    // (notion_block_catalog.json). Today this passes because the Rust struct
     // lacks `#[serde(deny_unknown_fields)]`.
     let json = serde_json::json!({ "path": "/x", "extra": "junk" });
     let result: Result<DataBinding, _> = serde_json::from_value(json);
@@ -310,7 +375,7 @@ fn data_binding_rejects_unknown_fields() {
 #[test]
 fn child_list_template_rejects_unknown_fields() {
     // Schema: $defs/ChildList → Template variant has `additionalProperties: false`
-    // (block_catalog.json:1033). Today this passes because the Rust struct
+    // (notion_block_catalog.json). Today this passes because the Rust struct
     // lacks `#[serde(deny_unknown_fields)]`.
     let json = serde_json::json!({ "componentId": "x", "path": "/y", "extra": "junk" });
     let result: Result<ChildListTemplate, _> = serde_json::from_value(json);

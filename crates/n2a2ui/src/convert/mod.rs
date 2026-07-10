@@ -14,7 +14,7 @@ use futures::future::BoxFuture;
 use n2a2ui_a2ui::v0_9::{
     Audio, BlockImage, BlockQuote, Bookmark, ChildList, CodeBlock, Column, ColumnList, Component,
     ComponentId, ContentTab, ContentTabs, Divider, File as FileComponent, Heading, HeadingLevel,
-    Katex, List, ListItem, ListStyle, Mermaid, NotionCallout, NotionCalloutColor,
+    Html, Katex, List, ListItem, ListStyle, Mermaid, NotionCallout, NotionCalloutColor,
     NotionCalloutIcon, NotionCalloutVariant, Paragraph, RichText, Table, TableCell, TableRow,
     Toggle, Unsupported, Video,
 };
@@ -43,6 +43,7 @@ pub(crate) struct Converter<'a> {
     pub enable_unsupported_block: bool,
     pub enable_fetch_image_meta: bool,
     pub enable_fetch_bookmark_meta: bool,
+    pub enable_html_embed: bool,
 }
 
 impl<'a> Converter<'a> {
@@ -200,7 +201,7 @@ impl<'a> Converter<'a> {
                 Block::Audio { audio } => audio_component(&id, audio),
                 Block::Video { video } => video_component(&id, video),
                 Block::Bookmark { bookmark } => self.bookmark_from_url(&id, &bookmark.url).await,
-                Block::Embed { embed } => self.bookmark_from_url(&id, &embed.url).await,
+                Block::Embed { embed } => self.embed_from_url(&id, &embed.url).await,
                 Block::LinkPreview { link_preview } => {
                     self.bookmark_from_url(&id, &link_preview.url).await
                 }
@@ -476,6 +477,27 @@ impl<'a> Converter<'a> {
         };
         let scraper = html_meta_scraper::MetaScraper::new(&html);
         (scraper.title(), scraper.description(), scraper.image())
+    }
+
+    /// Build a component for `Block::Embed`. Notion surfaces its "HTML
+    /// block" feature as a plain `embed` block whose `url` points at an
+    /// uploaded `.html` file (Notion-hosted S3, filename in the object
+    /// key path, typically presigned and time-limited). When
+    /// `enable_html_embed` is on and the URL's path (ignoring the query
+    /// string) ends in `.html`, render it as an `Html` component with
+    /// `src` set to the URL — no fetch, the client loads it directly;
+    /// otherwise fall back to the generic `Bookmark` handling shared with
+    /// `Block::Bookmark` / `Block::LinkPreview`.
+    async fn embed_from_url(&self, id: &str, url: &str) -> Component {
+        if self.enable_html_embed && is_html_file_url(url) {
+            return Html {
+                id: id.into(),
+                src: Some(url.into()),
+                ..Default::default()
+            }
+            .into();
+        }
+        self.bookmark_from_url(id, url).await
     }
 
     async fn column_list(
@@ -870,6 +892,17 @@ fn video_component(id: &str, file: &NotionFile) -> Component {
 fn notion_page_url(block_id: &str) -> String {
     let stripped: String = block_id.chars().filter(|c| *c != '-').collect();
     format!("https://www.notion.so/{stripped}")
+}
+
+/// True if `url`'s path (ignoring the query string) ends in `.html`,
+/// case-insensitively — the signal used to recognize an uploaded HTML
+/// file surfaced as a Notion `embed` block.
+fn is_html_file_url(url: &str) -> bool {
+    url.split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .to_ascii_lowercase()
+        .ends_with(".html")
 }
 
 /// Resolve any Notion icon variant that carries (or can be derived to

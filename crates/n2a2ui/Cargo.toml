@@ -21,7 +21,7 @@ futures = "0.3.32"
 html-meta-scraper = "^0.3"
 imagesize = "0.15"
 indexmap = { workspace = true }
-infer = "0.19.0"
+infer = "0.22.0"
 notionrs = "0.28.0"
 reqwest = { version = "0.13", default-features = false, features = [
     "rustls",

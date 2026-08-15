@@ -951,14 +951,15 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "notionrs"
-version = "0.31.0"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df87603f4327d7714a7e5cc3cac96949cdb65b38bf0bb264173a30bde68ad0f6"
+checksum = "4295c105ee6a840b7b5e049100dc29fe1722dba8d0a74ec89421f9029bf5745b"
 dependencies = [
  "bytes",
  "futures",
  "notionrs_macro",
  "notionrs_types",
+ "percent-encoding",
  "reqwest",
  "serde",
  "serde_json",
@@ -981,9 +982,9 @@ dependencies = [
 
 [[package]]
 name = "notionrs_types"
-version = "0.23.0"
+version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5444317151f0700d4196ff56660424584d0b2a64c330e5527b38e439a744655b"
+checksum = "7a1d3b885f74e27dccecda7e6b370fc8c245ff522df07d6a891a74d508ffcd92"
 dependencies = [
  "notionrs_macro",
  "serde",

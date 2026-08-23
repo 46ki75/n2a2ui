@@ -1,0 +1,8 @@
+{
+  "name": "n2a2ui-workspace",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@9.12.3"
+}

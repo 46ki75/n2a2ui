@@ -1,6 +1,6 @@
 {
   "name": "n2a2ui",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Convert Notion blocks into A2UI v0.9 components using the Elmethis Notion Block Catalog.",
   "type": "module",
   "main": "./dist/index.cjs",

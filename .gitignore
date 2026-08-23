@@ -1,4 +1,9 @@
+node_modules/
+dist/
+coverage/
+lcov.info
 /target
+
 .out
 
 .env

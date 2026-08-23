@@ -1,63 +1,38 @@
-# Single source of truth for what `test`, `lint`, `build`, `ci` mean in
-# this repo. Other tools (CI, contributors, AI agents) invoke `just
-# <recipe>`, never the underlying `cargo` command directly.
+# Command source of truth. CI and contributors invoke `just <recipe>`.
 
 # Default recipe: show available recipes.
 default:
     @just --list
 
-# --- Formatting & lint ---------------------------------------------------
-
 fmt:
-    cargo fmt --all
+    pnpm --filter n2a2ui fmt
 
 fmt-check:
-    cargo fmt --all -- --check
+    pnpm --filter n2a2ui fmt:check
 
 lint:
-    cargo clippy --workspace --all-targets -- -D warnings
+    pnpm --filter n2a2ui lint
+
+typecheck:
+    pnpm --filter n2a2ui typecheck
 
 build:
-    cargo build --workspace
-
-# --- Hermetic tests (run on every PR) ------------------------------------
+    pnpm --filter n2a2ui build
 
 test:
-    cargo test --workspace
+    pnpm --filter n2a2ui test
 
-ci: fmt-check lint test
+ci: fmt-check lint typecheck test build
 
-# --- Live / approval-required tests --------------------------------------
-# Hits real Notion API. Requires NOTION_API_KEY and BLOCK_ID (or .env at
-
-# workspace root). Gated by `#[ignore]` on each live test.
+# Hits the real Notion API. Requires NOTION_API_KEY and BLOCK_ID.
 test-live:
-    cargo test --workspace -- --ignored
+    pnpm --filter n2a2ui test:live
 
-ci-live: fmt-check lint test test-live
+ci-live: ci test-live
 
-# --- Coverage (cargo-llvm-cov) -------------------------------------------
+coverage:
+    pnpm --filter n2a2ui coverage
 
-# Instrumented hermetic test run (no report yet).
-test-cov:
-    cargo llvm-cov --no-report --workspace
-
-# AI-friendly: per-file table (drop 100% files) + uncovered line numbers.
-coverage: test-cov
-    cargo llvm-cov report --show-missing-lines --color=always 2>&1 | grep -v " 100.00%"
-
-# Local HTML drilldown.
-coverage-html: test-cov
-    cargo llvm-cov report --html --open
-
-# CI / Codecov upload.
-coverage-ci: test-cov
-    cargo llvm-cov report --lcov --output-path lcov.info
-
-# --- Live-tier coverage --------------------------------------------------
-
-test-live-cov:
-    cargo llvm-cov --no-report --workspace -- --ignored
-
-coverage-live: test-live-cov
-    cargo llvm-cov report --show-missing-lines --color=always 2>&1 | grep -v " 100.00%"
+coverage-ci:
+    pnpm --filter n2a2ui coverage --coverage.reporter=lcov
+    cp packages/n2a2ui/coverage/lcov.info lcov.info

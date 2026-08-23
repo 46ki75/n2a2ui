@@ -1,94 +1,176 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides repository guidance for coding agents.
 
-## Workspace layout
+## Package
 
-Cargo workspace (edition 2024, resolver 3) with two member crates:
+`n2a2ui` is a strict TypeScript package under `packages/n2a2ui`, targeting
+Node.js 22. It converts Notion block trees into A2UI v0.9 `Surface` objects or
+progressive message sequences. It builds ESM, CommonJS, and declarations from
+`packages/n2a2ui/src/index.ts` into `packages/n2a2ui/dist/`.
 
-- `crates/n2a2ui-a2ui` — Rust types for the [A2UI](https://a2ui.dev) v0.9 Elmethis Notion Block Catalog. Pure data model; no I/O. The wire schema is vendored at `crates/n2a2ui-a2ui/schemas/v0_9/notion_block_catalog.json`.
-- `crates/n2a2ui` — converter that walks a Notion block tree (via `notionrs`) and emits an A2UI `Surface` (or the v0.9 message sequence that renders it).
+Use pnpm 9 as declared by `packageManager`. The `Justfile` is the command source
+of truth; automation and contributors should invoke its recipes rather than
+duplicating underlying commands.
 
 ## Commands
 
 ```bash
-# Build everything
-cargo build
-
-# Run all tests (lib + integration). CI only runs --lib (see below).
-cargo test
-
-# What CI runs (.github/workflows/unit-test.yml)
-cargo test --lib
-
-# Run one crate's tests
-cargo test -p n2a2ui-a2ui
-cargo test -p n2a2ui
-
-# Run a single test by name
-cargo test -p n2a2ui-a2ui surface_round_trip_preserves_order
-
-# Live integration test (skipped without env vars; .env at workspace root works)
-NOTION_API_KEY=... BLOCK_ID=... \
-  cargo test -p n2a2ui --test convert_block -- --nocapture
-
-# Lint / format
-cargo clippy --all-targets
-cargo fmt
+just fmt          # Prettier write
+just fmt-check    # Prettier check
+just lint         # ESLint
+just typecheck    # tsc --noEmit
+just build        # ESM, CommonJS, and declarations
+just test         # Hermetic Vitest suite; excludes live tests
+just ci           # Format, lint, typecheck, test, and build
+just test-live    # Real Notion API test; NOTION_API_KEY + BLOCK_ID
+just ci-live      # Hermetic CI plus live test
+just coverage     # Text, HTML, and LCOV reports under coverage/
+just coverage-ci  # Root lcov.info for Codecov
 ```
 
-Note: `crates/n2a2ui-a2ui/tests/schema.rs` `include_str!`s the vendored catalog and asserts its `$id` matches `n2a2ui_a2ui::v0_9::NOTION_BLOCK_CATALOG_ID` — if you bump the catalog version, both the URL constant and the vendored file must move together or that test fails.
+`.env` at the repository root is supported for live test variables. The live
+test skips when either variable is absent.
 
-## Architecture
+## Layout
 
-### A2UI surface model (`n2a2ui_a2ui::v0_9`)
+- `packages/n2a2ui/src/client.ts`: public `N2A2UIClient`, eager conversion, async-generator
+  streaming, and message collection.
+- `packages/n2a2ui/src/convert/converter.ts`: recursive Notion traversal, pagination, sibling
+  grouping, block mappings, and chunk construction.
+- `packages/n2a2ui/src/convert/rich-text.ts`: one deterministic A2UI component per Notion
+  rich-text run.
+- `packages/n2a2ui/src/convert/metadata.ts`: nonfatal image dimension and bookmark metadata
+  fetching.
+- `packages/n2a2ui/src/convert/color.ts`: Notion foreground/background color mapping.
+- `packages/n2a2ui/src/a2ui.ts`: catalog-derived component types, v0.9 message helpers, and the
+  ordered `Surface` adjacency list.
+- `packages/n2a2ui/src/id.ts`: stable synthesized ID rules.
+- `packages/n2a2ui/src/index.ts`: package public exports.
+- `packages/n2a2ui/tests/*.test.ts`: hermetic tests; `*.live.test.ts`:
+  approval-tier tests.
 
-A `Surface` is `{ root: ComponentId, components: IndexMap<ComponentId, Component> }` — a flat adjacency list. Parents reference children by id; the `IndexMap` preserves insertion order across serde round-trips (asserted in tests). Use `Surface::insert(component)` rather than touching the map directly — it keys by `component.id()`.
+## Dependencies
 
-`Component` is a `#[serde(tag = "component")]` tagged union over every block type in the catalog. The discriminator field name (`component`) and per-variant casing are dictated by the v0.9 wire format, so don't rename them. A couple of serde quirks worth knowing before adding fields:
+- `@notionhq/client`: official API client, generated response types,
+  `collectPaginatedAPI`, and `isFullBlock`.
+- `@a2ui/web_core/v0_9`: protocol message, dynamic value, child-list, and base
+  component types.
+- `@elmethis/core`: owner of the Notion Block Catalog component APIs and
+  `NOTION_BLOCK_CATALOG_ID`.
+- `cheerio` and `image-size`: optional bookmark and image metadata extraction.
+- `zod`: declared runtime dependency; do not assume it is part of the converter
+  path without checking imports.
+- TypeScript, tsdown, ESLint, Prettier, and Vitest are development tooling.
 
-- `Callout::callout_type` serializes as `"type"` (`#[serde(rename = "type")]`).
-- `HeadingLevel` round-trips as `u8` 1..=6, not a string.
-- All optional fields use `skip_serializing_if = "Option::is_none"` — keep this when adding new fields so the wire stays minimal.
-- `DynamicString` / `ChildList` are `#[serde(untagged)]` unions of literal vs. binding vs. template — order of variants matters for deserialization.
-- `ContentTab` uses `label: ChildList` and `content: ChildList` (singular, both ChildList). Older shapes with `title`/`labels[]`/`contents[]` are gone — keep the rename in sync with `@elmethis/core`'s `ContentTabApi`.
+The catalog is not owned or vendored here. Component schema and catalog-ID
+changes belong in `@elmethis/core`; update this package's dependency and inferred
+types afterward. Do not duplicate catalog definitions locally.
 
-Adding a new component variant requires four edits in lockstep: define the struct in `block_catalog.rs`, add it to the `Component` enum, add it to the `component_impls!` macro list (this generates `From<T>` and `Component::id()`), and add a round-trip test in `tests/schema.rs`.
+## Notion API Model
 
-### v0.9 message envelope (`n2a2ui_a2ui::v0_9::message`)
+`N2A2UIClient` requires an official `Client` instance. `fetch` defaults to
+`globalThis.fetch`, and all four feature flags default to `false`:
+`enableUnsupportedBlock`, `enableFetchImageMeta`,
+`enableFetchBookmarkMeta`, and `enableHtmlEmbed`. Normalized flags are frozen in
+`client.options`.
 
-`Message { version, #[serde(flatten)] body: MessageBody }` serializes as `{"version":"v0.9","createSurface":{...}}` — the v0.9 wire shape uses the body key as the discriminator (externally-tagged enum, camelCase). Body variants: `CreateSurface`, `UpdateComponents`, `UpdateDataModel`, `DeleteSurface`. `Surface::to_messages(surface_id, catalog_id)` emits the canonical `[createSurface, updateComponents]` pair that renders the whole surface in one round-trip.
+Children are always fetched with:
 
-### Notion → A2UI conversion (`n2a2ui`)
+```ts
+collectPaginatedAPI(notion.blocks.children.list, { block_id: parentId });
+```
 
-`Client` holds a `notionrs::client::Client` and a `reqwest::Client` plus four behavior toggles:
+This collects every page before grouping siblings, including recursively, so a
+list can span Notion response pages. Keep the bound SDK method and let the helper
+manage `start_cursor`.
 
-- `enable_unsupported_block` — when false, unknown block types are dropped; when true, they become `Unsupported` components carrying a `details` string.
-- `enable_fetch_image_meta` — when true, image blocks are fetched once with `reqwest` + `imagesize` to populate `width`/`height` on `BlockImage`. This adds a network round-trip per image.
-- `enable_fetch_bookmark_meta` — when true, `Block::Bookmark` / `Block::Embed` / `Block::LinkPreview` URLs are fetched once and parsed with `html-meta-scraper` to populate `title`, `description` (OG / Twitter / `<meta name=description>`), and `image` (OG / Twitter) on the resulting `Bookmark`. Adds one network round-trip per such block; failures degrade silently to the bare `{ url }` shape. Notion's `caption` is deliberately not routed here — it's user-authored text, distinct from the OG `meta description`.
-- `enable_html_embed` — Notion's "HTML block" feature surfaces over the API as a plain `Block::Embed` whose `url` points at an uploaded `.html` file (Notion-hosted S3, typically presigned and time-limited; `notionrs_types::EmbedBlock` doesn't expose `caption`, so the filename isn't otherwise visible). `embed_from_url` (`src/convert/mod.rs`) detects this via `is_html_file_url` — the URL's path, ignoring the query string, ends in `.html` (case-insensitive) — and when the toggle is on, emits an `Html` component with `src` set to the URL (no fetch; the A2UI client loads it directly via `<iframe src>`) instead of `Bookmark`. Off by default; falls back to the normal `Bookmark` path when disabled or when the URL doesn't match.
+The SDK's children response is modeled as
+`BlockObjectResponse | PartialBlockObjectResponse`. Preserve the `NotionBlock`
+union and use `isFullBlock` before accessing `type` or type-specific payloads.
+Partial blocks are skipped by default or emitted as `Unsupported` when enabled.
+Do not replace current SDK types with handwritten block interfaces.
 
-Three entry points, layered around the same `Converter` core:
+## Surface And Messages
 
-- `Client::convert_block(block_id) -> Surface` — eager, returns the whole adjacency-list surface in one shot.
-- `Client::convert_block_stream(block_id, surface_id) -> impl Stream<Item = Result<Message, Error>>` — the streaming primitive. Emits `createSurface`, then an `updateComponents` carrying an empty root `Column` (so the surface mounts immediately and the all-skipped case still produces a valid root), then one `updateComponents` per top-level sibling group. Each chunk carries that group's synthesized components plus an updated root `Column` whose `children` array grows by one id. `updateComponents` is upsert-by-id (v0.9 spec §`updateComponents` / Adjacency List), so re-sending the root is cheap and replay-safe; the empty-root mount is required because v0.9 buffers all updates until `root` exists.
-- `Client::convert_block_to_messages(block_id, surface_id) -> Vec<Message>` — defined as `convert_block_stream(...).try_collect().await`. Eager wire shape is therefore `createSurface + updateComponents(empty root) + N × updateComponents(chunk)`, **not** the 2-message pair `Surface::to_messages` produces from a finished `Surface`. Callers asserting `messages.len() == 2` were relying on the prior shape and will need updating.
+`Surface` is a flat adjacency list with `root: ComponentId` and an insertion-
+ordered `Map<ComponentId, Component>`. `insert` keys by `component.id`, `toJSON`
+serializes the map as an object, and `Surface.toMessages` emits one
+`createSurface` plus one full `updateComponents`.
 
-Conversion lives in `src/convert/`. The eager `Converter::convert_children` walks each level and groups consecutive `bulleted_list_item` / `numbered_list_item` / `to_do` siblings into a single `List` (group id `format!("{first_item_id}::list")`) so the wire shape matches A2UI's nested-list model rather than Notion's flat sibling layout. The streaming path replays the same grouping in the orchestrator (see `client::convert_block_stream`) by calling `Converter::convert_single_block_to_chunk` or `convert_list_group_to_chunk` per group — each owns a fresh bag, delegates to the existing per-block primitives, and returns the chunk's `(id, components)`. To-do checkboxes render via a synthesized `RichText` prefix child (`☐` / `☑`).
+`convertBlock(blockId)` recursively converts the whole tree. It inserts the
+`root` `Column` first, followed by converter output in deterministic order.
 
-**Component id strategy** (`src/id.rs`): Notion block UUIDs are reused verbatim as `ComponentId`s. For components the converter _synthesizes_ (the page-level root, the per-run `RichText`/`LinkText`/`Icon` inside a rich-text array, per-row table cells, callout/page leading icons, list-group wrappers, to-do prefix markers, etc.), ids are minted via `child_id(parent, slot, index)` → `"{parent}::{slot}/{index}"`. This is load-bearing: the same Notion page must always produce the same A2UI ids so downstream diffs stay stable. The synthesized page root uses the constant `ROOT_ID = "root"`.
+`convertBlockStream(blockId, surfaceId)` has different, load-bearing semantics:
 
-**Inline icon mapping** (`src/convert/rich_text.rs` + `inline_icon_component` in `src/convert/mod.rs`):
+1. Collect every page of the requested block's direct children before the first
+   yield. A failure here delivers no messages.
+2. Yield `createSurface` with `NOTION_BLOCK_CATALOG_ID`.
+3. Yield `updateComponents` with an empty `root` `Column` so the surface mounts
+   and an all-skipped page remains valid.
+4. Group top-level siblings. Each non-list block is one group. Consecutive
+   bullets and to-dos form one unordered group; consecutive numbered items form
+   one ordered group. Style changes and non-list blocks split groups.
+5. Convert one complete group at a time. Each yielded update contains that
+   group's components in converter order and the updated `root` last. Root
+   children are a growing snapshot. Skipped single groups emit no update.
+6. Recursive fetches and metadata complete before their group is yielded. Later
+   failures end the generator without retracting prior messages.
 
-- A `Mention::CustomEmoji` rich-text run becomes an A2UI `Icon { src = custom_emoji.url, alt = name }` instead of a plain `RichText`. This applies inside every container that uses `convert_rich_texts` (paragraph, heading, quote, callout, toggle summary, list item, table cell, content-tab label).
-- A callout's leading `block.icon` is rendered as a synthesized child prepended to the callout's children — `Emoji` → `RichText` carrying the Unicode glyph, `CustomEmoji` / `File` → `Icon` with the URL. The same icon still feeds `callout_type_from_icon` for the `CalloutType` hint.
+`updateComponents` is upsert-by-ID, making repeated root snapshots replay-safe.
+This is chunked conversion, not page-by-page Notion streaming.
 
-**Tab → ContentTabs mapping**: one Notion `tab` block becomes one `ContentTabs`; each child paragraph becomes one `ContentTab` where the paragraph's `rich_text` is the `label` ChildList and its children are the `content` ChildList.
+`convertBlockToMessages` iterates and collects exactly the generator sequence.
+Its shape is `createSurface + empty-root update + N group updates`, not the
+two-message `Surface.toMessages` shape.
+
+## Conversion Invariants
+
+- Block-derived components reuse Notion IDs. `ROOT_ID` is `root`.
+- `childId(parent, slot, index)` is exactly `<parent>::<slot>/<index>` and is
+  used for rich-text runs, table cells, and to-do markers.
+- List IDs are exactly `<first-item-id>::list`. Do not introduce random IDs.
+- Child components are appended before their parent. Eager and reconstructed
+  streaming surfaces must preserve identical `Map` order.
+- A sibling list group contains one style: bullets and to-dos are unordered;
+  numbered items are ordered. Grouping must work across pagination boundaries.
+- To-dos synthesize `RichText` prefixes `"☐ "` or `"☑ "` before their text.
+- Tabs use only direct paragraph children. Paragraph rich text becomes
+  `ContentTab.label`; paragraph children become `ContentTab.content`.
+- Rich-text custom emoji mentions become `Icon`; linked runs become `LinkText`;
+  equations become `RichText` with `katex`; other runs become `RichText`.
+- Callouts become `NotionCallout` with structured emoji/image icons and mapped
+  color/variant, not synthesized leading children.
+- Tables ignore non-row children before selecting a column-header row. First
+  cells are marked as row headers when requested.
+- `code` with language `mermaid` becomes `Mermaid`; other code becomes
+  `CodeBlock`. Block equations become `Katex`.
+- Bookmark captions never populate metadata descriptions. Child pages and
+  databases become titled Notion bookmark URLs.
+- Missing `file_upload` URLs become `Unsupported` even when general unsupported
+  block emission is disabled.
+
+## Metadata And HTML
+
+All metadata options are opt-in and add one fetch per applicable component.
+Image bodies are parsed by `image-size`. Bookmark HTML is parsed by `cheerio`
+with priority Open Graph, Twitter, then native title/description. Metadata errors
+return empty fields and never fail conversion. Bookmark metadata applies to
+bookmark, link-preview, and non-HTML embed URLs.
+
+With `enableHtmlEmbed`, only an embed URL whose path ends in `.html`
+case-insensitively, ignoring query and fragment, becomes `Html { src }`. It is
+not fetched by the converter. All other embeds use bookmark behavior.
 
 ## Conventions
 
-- PRs target `develop` or `release/*`, not `main` (see `.github/pull_request_template.md`). Neither branch currently exists on the remote — fall back to `main` until one is cut.
-- Cargo versions: `n2a2ui` and `n2a2ui-a2ui` are kept in lockstep — bump both `Cargo.toml` versions together, and update `n2a2ui`'s pinned `n2a2ui-a2ui = { path = ..., version = "0.X" }` to match. Tag releases `vX.Y.Z` (workspace-wide); `n2a2ui-a2ui` additionally gets its own `n2a2ui-a2ui-vX.Y.Z` tag (likely for crates.io publishing).
-- Workspace deps (`serde`, `serde_json`, `indexmap`, `async-stream`) are declared once in the root `Cargo.toml` and pulled into members via `{ workspace = true }` — add new shared deps there, not per-crate.
-- The `n2a2ui-a2ui` crate must stay I/O-free (no `reqwest`, `tokio`, etc.) — it's the pure schema crate consumed by the converter and potentially other producers.
-- When changing a component's schema in `crates/n2a2ui-a2ui`, mirror the same change in the upstream TypeScript catalog at `/home/ikuma/org/46ki75/elmethis/packages/core/src/a2ui/v0_9/notion-block-catalog.ts` (renamed from `block-catalog.ts`; the catalog id lives in `notion-block-catalog-json.ts` as `NOTION_BLOCK_CATALOG_ID`) and the matching Qwik renderer/story/spec at `packages/qwik/src/components/a2ui/catalog/notion-block-catalog.tsx`. The Rust schema is a vendored mirror of that source of truth — regenerate and diff-check it with `cd packages/core && npx tsx scripts/emit-catalog.ts` (writes `dist/a2ui/v0_9/notion_block_catalog.json`).
+- Keep source imports ESM-compatible with `.js` suffixes.
+- Preserve strict typing, including `noUncheckedIndexedAccess` and
+  `exactOptionalPropertyTypes`; omit absent optional fields rather than assigning
+  `undefined`.
+- Export public API through `packages/n2a2ui/src/index.ts` and verify both ESM
+  and CommonJS builds.
+- Add hermetic tests for conversion changes and live coverage only when real API
+  behavior is necessary.
+- PRs target `develop` or `release/*` per the pull request template; use `main`
+  only when those branches do not exist.

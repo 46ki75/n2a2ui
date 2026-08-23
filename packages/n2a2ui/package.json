@@ -39,6 +39,7 @@
     "a2ui"
   ],
   "scripts": {
+    "prepublishOnly": "pnpm run build",
     "build": "tsdown",
     "ci": "pnpm fmt:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "coverage": "vitest run --coverage",

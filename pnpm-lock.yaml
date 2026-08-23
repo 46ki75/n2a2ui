@@ -15,7 +15,7 @@ importers:
         version: 0.10.6
       '@elmethis/core':
         specifier: ^0.24.0
-        version: 0.24.0(@a2ui/web_core@0.10.6)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)
+        version: 0.24.0(@a2ui/web_core@0.10.6)(stylelint@17.14.1(typescript@5.9.3))(zod@4.4.3)
       '@notionhq/client':
         specifier: ^5.26.0
         version: 5.26.0
@@ -26,8 +26,8 @@ importers:
         specifier: ^2.0.2
         version: 2.0.2
       zod:
-        specifier: ^3.25.76
-        version: 3.25.76
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
@@ -1881,6 +1881,9 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+
 snapshots:
 
   '@a2ui/web_core@0.10.6':
@@ -1951,14 +1954,14 @@ snapshots:
     dependencies:
       postcss-selector-parser: 7.1.5
 
-  '@elmethis/core@0.24.0(@a2ui/web_core@0.10.6)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)':
+  '@elmethis/core@0.24.0(@a2ui/web_core@0.10.6)(stylelint@17.14.1(typescript@5.9.3))(zod@4.4.3)':
     dependencies:
       '@a2ui/web_core': 0.10.6
       stylelint-config-css-modules: 4.6.0(stylelint@17.14.1(typescript@5.9.3))
       stylelint-config-standard: 40.0.0(stylelint@17.14.1(typescript@5.9.3))
       stylelint-value-no-unknown-custom-properties: 6.1.1(stylelint@17.14.1(typescript@5.9.3))
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.2(zod@3.25.76)
+      zod: 4.4.3
+      zod-to-json-schema: 3.25.2(zod@4.4.3)
     transitivePeerDependencies:
       - stylelint
 
@@ -3532,4 +3535,10 @@ snapshots:
     dependencies:
       zod: 3.25.76
 
+  zod-to-json-schema@3.25.2(zod@4.4.3):
+    dependencies:
+      zod: 4.4.3
+
   zod@3.25.76: {}
+
+  zod@4.4.3: {}

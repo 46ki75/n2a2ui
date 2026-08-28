@@ -68,7 +68,7 @@
     "prettier": "^3.7.4",
     "tsdown": "^0.22.14",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.50.1",
+    "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.0"
   }
 }

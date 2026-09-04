@@ -11,11 +11,11 @@ importers:
   packages/n2a2ui:
     dependencies:
       '@a2ui/web_core':
-        specifier: ^0.10.5
-        version: 0.10.6
+        specifier: ^0.10.7
+        version: 0.10.7
       '@elmethis/core':
         specifier: ^0.24.0
-        version: 0.24.0(@a2ui/web_core@0.10.6)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)
+        version: 0.24.0(@a2ui/web_core@0.10.7)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)
       '@notionhq/client':
         specifier: ^5.26.0
         version: 5.26.0
@@ -65,8 +65,8 @@ importers:
 
 packages:
 
-  '@a2ui/web_core@0.10.6':
-    resolution: {integrity: sha512-kTwir93Fk5eupl4FZ6CkhJDrisR2fnQgEIlDCTp06uzx2PvUhItbq1E+h7hFyeHGTu/NMci9Tqn7Is1IVRpufw==}
+  '@a2ui/web_core@0.10.7':
+    resolution: {integrity: sha512-9czuUjSgsomHYy79lKExwtmMza9iCqaXJx7aw5xOGMLKNPziwux5fj4UnsV41bQkLDeZwNu2LoOwn5c2ceyDsQ==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -1997,7 +1997,7 @@ packages:
 
 snapshots:
 
-  '@a2ui/web_core@0.10.6':
+  '@a2ui/web_core@0.10.7':
     dependencies:
       '@preact/signals-core': 1.14.4
       date-fns: 4.4.0
@@ -2070,9 +2070,9 @@ snapshots:
     dependencies:
       postcss-selector-parser: 7.1.6
 
-  '@elmethis/core@0.24.0(@a2ui/web_core@0.10.6)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)':
+  '@elmethis/core@0.24.0(@a2ui/web_core@0.10.7)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)':
     dependencies:
-      '@a2ui/web_core': 0.10.6
+      '@a2ui/web_core': 0.10.7
       stylelint-config-css-modules: 4.6.0(stylelint@17.14.1(typescript@5.9.3))
       stylelint-config-standard: 40.0.0(stylelint@17.14.1(typescript@5.9.3))
       stylelint-value-no-unknown-custom-properties: 6.1.1(stylelint@17.14.1(typescript@5.9.3))

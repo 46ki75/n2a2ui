@@ -51,7 +51,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@a2ui/web_core": "^0.10.5",
+    "@a2ui/web_core": "^0.10.7",
     "@elmethis/core": "^0.24.0",
     "@notionhq/client": "^5.26.0",
     "cheerio": "^1.1.2",

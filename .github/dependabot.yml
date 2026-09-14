@@ -17,3 +17,7 @@ updates:
           - "@notionhq/*"
           - "@a2ui/*"
           - "@elmethis/*"
+      vitest-toolchain:
+        patterns:
+          - "vitest"
+          - "@vitest/*"

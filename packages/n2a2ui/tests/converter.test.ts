@@ -2,6 +2,8 @@ import {
   Client,
   type ApiColor,
   type BlockObjectResponse,
+  type DatabaseObjectResponse,
+  type PageObjectResponse,
   type PartialBlockObjectResponse,
   type RichTextItemResponse,
 } from "@notionhq/client";
@@ -15,8 +17,8 @@ import {
   type ConverterOptions,
   type NotionBlock,
 } from "../src/convert/converter.js";
-import { convertRichTexts } from "../src/convert/rich-text.js";
 import { ROOT_ID } from "../src/id.js";
+import { convertRichTexts, type RichTextConversion } from "../src/index.js";
 
 const annotations = {
   bold: false,
@@ -501,7 +503,87 @@ describe("converter regression coverage", () => {
   });
 });
 
-describe("rich text", () => {
+describe("public rich-text conversion", () => {
+  it("converts a page property without a block or client", () => {
+    const property: Extract<
+      PageObjectResponse["properties"][string],
+      { type: "rich_text" }
+    > = {
+      id: "summary-property",
+      type: "rich_text",
+      rich_text: [text("Summary")],
+    };
+
+    const result: RichTextConversion = convertRichTexts(
+      "page-id",
+      property.id,
+      property.rich_text,
+    );
+
+    expect(result).toEqual({
+      ids: ["page-id::summary-property/0"],
+      components: [
+        {
+          id: "page-id::summary-property/0",
+          component: "RichText",
+          text: "Summary",
+        },
+      ],
+    });
+  });
+
+  it.each(["title", "description"] as const)(
+    "converts a database %s array",
+    (slot) => {
+      const database: Pick<
+        DatabaseObjectResponse,
+        "id" | "title" | "description"
+      > = {
+        id: "database-id",
+        title: [text("Tasks")],
+        description: [text("Team tasks")],
+      };
+
+      expect(convertRichTexts(database.id, slot, database[slot])).toEqual({
+        ids: [`database-id::${slot}/0`],
+        components: [
+          {
+            id: `database-id::${slot}/0`,
+            component: "RichText",
+            text: slot === "title" ? "Tasks" : "Team tasks",
+          },
+        ],
+      });
+    },
+  );
+
+  it("returns empty arrays for empty input", () => {
+    expect(convertRichTexts("parent", "property", [])).toEqual({
+      ids: [],
+      components: [],
+    });
+  });
+
+  it("accepts readonly arrays and scopes stable IDs by parent and slot", () => {
+    const items = Object.freeze([text("First"), text("Second")]);
+    const result = convertRichTexts("parent", "property", items);
+
+    expect(result.ids).toEqual(["parent::property/0", "parent::property/1"]);
+    expect(result.components.map((component) => component.id)).toEqual(
+      result.ids,
+    );
+    expect(convertRichTexts("parent", "property", items)).toEqual(result);
+    expect(convertRichTexts("parent", "title", items).ids).toEqual([
+      "parent::title/0",
+      "parent::title/1",
+    ]);
+    expect(convertRichTexts("other", "property", items).ids).toEqual([
+      "other::property/0",
+      "other::property/1",
+    ]);
+    expect(items).toEqual([text("First"), text("Second")]);
+  });
+
   it("emits one deterministic component per run with canonical decoration order", () => {
     const items: RichTextItemResponse[] = [
       text("decorated", {

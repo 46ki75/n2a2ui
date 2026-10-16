@@ -11,11 +11,11 @@ importers:
   packages/n2a2ui:
     dependencies:
       '@a2ui/web_core':
-        specifier: ^0.12.0
-        version: 0.12.0
+        specifier: ^0.13.0
+        version: 0.13.0
       '@elmethis/core':
         specifier: ^0.24.0
-        version: 0.24.0(@a2ui/web_core@0.12.0)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)
+        version: 0.24.0(@a2ui/web_core@0.13.0)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)
       '@notionhq/client':
         specifier: ^5.27.0
         version: 5.27.0
@@ -65,8 +65,8 @@ importers:
 
 packages:
 
-  '@a2ui/web_core@0.12.0':
-    resolution: {integrity: sha512-wEg8954eDM4tx70O+qoUQYSCJbCywEIZEiqOpNXrmQUAKGsMNM47uns/7AE0W0nMfFbmJWE/huBwUVFaq+pDCA==}
+  '@a2ui/web_core@0.13.0':
+    resolution: {integrity: sha512-4Clpksne0RY9KAheQoPoTwVDJ+6XI0Es2yqVME/PN0aWQ1321Wih69SEr8Nkc+7uKMyV5FlK32o88uoyM7ZBCw==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -1127,6 +1127,11 @@ packages:
     resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
     hasBin: true
 
+  jsesc@3.1.0:
+    resolution: {integrity: sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==}
+    engines: {node: '>=6'}
+    hasBin: true
+
   json-parse-even-better-errors@2.3.1:
     resolution: {integrity: sha512-xyFwyhro/JEof6Ghe2iz2NcXoj2sloNsWr/XsERDK/oiPCfaNhl5ONfp+jQdAZRQQ0IJWNzH9zIZF7li91kh2w==}
 
@@ -1396,6 +1401,15 @@ packages:
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
+
+  redos-detector@6.1.4:
+    resolution: {integrity: sha512-lPlka1rEH6kK42gtgokvvxMmpAvyc28DcRjQbGxeP5RJsJWgAduBOdGedVCDPdSyCr4ay/JDxq3nGYsJZyt8tA==}
+    engines: {node: '>=16.0.0'}
+    hasBin: true
+
+  regjsparser@0.13.0:
+    resolution: {integrity: sha512-NZQZdC5wOE/H3UT28fVGL+ikOZcEzfMGk/c3iN9UGxzWHMa1op7274oyiUVrAG4B2EuFhus8SvkaYnhvW92p9Q==}
+    hasBin: true
 
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
@@ -1821,11 +1835,12 @@ packages:
 
 snapshots:
 
-  '@a2ui/web_core@0.12.0':
+  '@a2ui/web_core@0.13.0':
     dependencies:
       '@lit/context': 1.1.6
       '@preact/signals-core': 1.14.4
       lit: 3.3.3
+      redos-detector: 6.1.4
       validate-color: 2.2.4
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)
@@ -1910,9 +1925,9 @@ snapshots:
     dependencies:
       postcss-selector-parser: 7.1.6
 
-  '@elmethis/core@0.24.0(@a2ui/web_core@0.12.0)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)':
+  '@elmethis/core@0.24.0(@a2ui/web_core@0.13.0)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)':
     dependencies:
-      '@a2ui/web_core': 0.12.0
+      '@a2ui/web_core': 0.13.0
       stylelint-config-css-modules: 4.6.0(stylelint@17.14.1(typescript@5.9.3))
       stylelint-config-standard: 40.0.0(stylelint@17.14.1(typescript@5.9.3))
       stylelint-value-no-unknown-custom-properties: 6.1.1(stylelint@17.14.1(typescript@5.9.3))
@@ -2760,6 +2775,8 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
+  jsesc@3.1.0: {}
+
   json-parse-even-better-errors@2.3.1: {}
 
   json-schema-traverse@0.4.1: {}
@@ -2993,6 +3010,14 @@ snapshots:
   quansync@1.0.0: {}
 
   queue-microtask@1.2.3: {}
+
+  redos-detector@6.1.4:
+    dependencies:
+      regjsparser: 0.13.0
+
+  regjsparser@0.13.0:
+    dependencies:
+      jsesc: 3.1.0
 
   require-from-string@2.0.2: {}
 

@@ -11,6 +11,11 @@ export interface RichTextConversion {
 
 type Decoration = NonNullable<RichText["decoration"]>[number];
 
+/**
+ * Converts a Notion rich-text array from any response into A2UI components.
+ * IDs use `<parentId>::<slot>/<index>`; use a distinct slot for each array
+ * under the same parent, such as a page property ID.
+ */
 export function convertRichTexts(
   parentId: ComponentId,
   slot: string,

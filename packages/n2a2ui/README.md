@@ -120,6 +120,43 @@ Its chunk semantics are exact and deterministic:
 This streams conversion chunks, not Notion pagination pages: direct-child
 pagination finishes before the first message.
 
+## Convert Rich Text
+
+`convertRichTexts` is a public, synchronous helper for Notion rich-text arrays
+from any response, not just blocks. Use it for page properties (including
+database row values), titles, or descriptions without creating an
+`N2A2UIClient`. It makes no API requests.
+
+For example, using the `notion` client created above:
+
+```ts
+import { isFullPage } from "@notionhq/client";
+import { convertRichTexts } from "n2a2ui";
+
+const page = await notion.pages.retrieve({ page_id: "your-page-id" });
+if (isFullPage(page)) {
+  const property = page.properties["Summary"];
+  if (property?.type === "rich_text") {
+    const { ids, components } = convertRichTexts(
+      page.id,
+      property.id,
+      property.rich_text,
+    );
+  }
+}
+```
+
+The signature is `convertRichTexts(parentId, slot, items)`. It accepts a readonly
+array of the official SDK's `RichTextItemResponse` and returns a
+`RichTextConversion` containing ordered `ids` and `components` arrays. Use the
+IDs as a parent component's children and add the components to your surface.
+Each run produces one component using the same mappings as block conversion.
+Empty input returns `{ ids: [], components: [] }`; the input is not modified.
+
+Generated IDs are `<parentId>::<slot>/<index>`. Choose a stable parent ID and a
+distinct slot for each array under it, such as a page property ID, `title`, or
+`description`, to avoid collisions.
+
 ## Converted Blocks
 
 - `paragraph`, `heading_1` through `heading_4`, `quote`, `callout`, `toggle`, and

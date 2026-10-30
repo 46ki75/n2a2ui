@@ -51,9 +51,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@a2ui/web_core": "^0.13.0",
-    "@elmethis/core": "^0.24.0",
-    "@notionhq/client": "^5.27.0",
+    "@a2ui/web_core": "^0.14.0",
+    "@elmethis/core": "^0.24.1",
+    "@notionhq/client": "^5.28.0",
     "cheerio": "^1.1.2",
     "image-size": "^2.0.4",
     "zod": "^3.25.76"

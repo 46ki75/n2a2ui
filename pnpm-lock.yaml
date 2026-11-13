@@ -23,8 +23,8 @@ importers:
         specifier: ^1.1.2
         version: 1.2.0
       image-size:
-        specifier: ^2.0.4
-        version: 2.0.4
+        specifier: ^2.1.0
+        version: 2.1.0
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -1143,8 +1143,8 @@ packages:
     resolution: {integrity: sha512-wCBiZ77u1tuWde6G/nfOtLaCTYcFDU5yCzARzK10y+rLhzYoL7a7yEemcopcc2Mzow7gZOIjnV2ym1NYmdiJOQ==}
     engines: {node: '>= 4'}
 
-  image-size@2.0.4:
-    resolution: {integrity: sha512-QRUkFFsRV/6fuESxb9Vkq+a0LkSrgKXuc2NEqfikiXxxN/G3tjWt5EVUlMaImRBZRZK/jRBEbYvpPYZL8t08Zw==}
+  image-size@2.1.0:
+    resolution: {integrity: sha512-6Dbisa46RsgeAh3TMSFL2i8+uIFG+/LRmz6Q2oscSJJvXo1sOw3EgNO4M8jPl1P+gR1atJLDPrpclX4IHz63sA==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -1446,6 +1446,11 @@ packages:
 
   postcss-selector-parser@7.2.0:
     resolution: {integrity: sha512-Khh/tERVBn0I1499dvBSHY0pWJloMJWUxDsOBM0CCDPAcVZ10Jl2L1qy1f19uEX22spa8Mv7DCdEQJc0cGwBhQ==}
+    engines: {node: '>=4'}
+    deprecated: Double-escapes CSS Modules class names (#362). Use 7.2.1.
+
+  postcss-selector-parser@7.2.1:
+    resolution: {integrity: sha512-GwxlMgTTXwIom+ebC7an3k6RaJDwklRQQnfiXsLPGicu8FYV/k/+1/9YY2OU2+r938H2t4X0TDxoif+HP2rjzQ==}
     engines: {node: '>=4'}
 
   postcss-value-parser@4.2.0:
@@ -1979,13 +1984,13 @@ snapshots:
       '@csstools/css-parser-algorithms': 4.0.2(@csstools/css-tokenizer@4.0.2)
       '@csstools/css-tokenizer': 4.0.2
 
-  '@csstools/selector-resolve-nested@4.0.2(postcss-selector-parser@7.2.0)':
+  '@csstools/selector-resolve-nested@4.0.2(postcss-selector-parser@7.2.1)':
     dependencies:
-      postcss-selector-parser: 7.2.0
+      postcss-selector-parser: 7.2.1
 
-  '@csstools/selector-specificity@6.0.1(postcss-selector-parser@7.2.0)':
+  '@csstools/selector-specificity@6.0.1(postcss-selector-parser@7.2.1)':
     dependencies:
-      postcss-selector-parser: 7.2.0
+      postcss-selector-parser: 7.2.1
 
   '@elmethis/core@0.24.1(@a2ui/web_core@0.15.0)(stylelint@17.14.1(typescript@5.9.3))(zod@3.25.76)':
     dependencies:
@@ -2866,7 +2871,7 @@ snapshots:
 
   ignore@7.0.14: {}
 
-  image-size@2.0.4: {}
+  image-size@2.1.0: {}
 
   import-fresh@3.3.1:
     dependencies:
@@ -3116,6 +3121,11 @@ snapshots:
   postcss-selector-parser@7.2.0:
     dependencies:
       util-deprecate: 1.0.2
+    optional: true
+
+  postcss-selector-parser@7.2.1:
+    dependencies:
+      util-deprecate: 1.0.2
 
   postcss-value-parser@4.2.0: {}
 
@@ -3332,8 +3342,8 @@ snapshots:
       '@csstools/css-syntax-patches-for-csstree': 1.1.16(css-tree@3.2.1)
       '@csstools/css-tokenizer': 4.0.2
       '@csstools/media-query-list-parser': 5.0.2(@csstools/css-parser-algorithms@4.0.2(@csstools/css-tokenizer@4.0.2))(@csstools/css-tokenizer@4.0.2)
-      '@csstools/selector-resolve-nested': 4.0.2(postcss-selector-parser@7.2.0)
-      '@csstools/selector-specificity': 6.0.1(postcss-selector-parser@7.2.0)
+      '@csstools/selector-resolve-nested': 4.0.2(postcss-selector-parser@7.2.1)
+      '@csstools/selector-specificity': 6.0.1(postcss-selector-parser@7.2.1)
       colord: 2.12.0
       cosmiconfig: 9.0.2(typescript@5.9.3)
       css-functions-list: 3.3.3
@@ -3355,7 +3365,7 @@ snapshots:
       picocolors: 1.1.1
       postcss: 8.5.32
       postcss-safe-parser: 7.1.0(postcss@8.5.32)
-      postcss-selector-parser: 7.2.0
+      postcss-selector-parser: 7.2.1
       postcss-value-parser: 4.2.0
       string-width: 8.3.0
       supports-hyperlinks: 4.6.0
